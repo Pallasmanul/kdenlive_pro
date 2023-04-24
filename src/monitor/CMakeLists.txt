@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: BSD-2-Clause
+# SPDX-FileCopyrightText: vincent.pinon@laposte.net
+
 add_subdirectory(scopes)
 set(kdenlive_SRCS
   ${kdenlive_SRCS}

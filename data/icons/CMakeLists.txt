@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: BSD-2-Clause
+# SPDX-FileCopyrightText: jk.kdedev@smartlab.uber.space
+
 ecm_install_icons(ICONS
   16-actions-keyframe.svg
   16-actions-keyframe-add.svg

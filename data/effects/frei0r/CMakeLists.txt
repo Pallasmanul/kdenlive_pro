@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: BSD-2-Clause
+# SPDX-FileCopyrightText: jk.kdedev@smartlab.uber.space
+
 INSTALL (FILES 
 
 frei0r_alpha0ps.xml

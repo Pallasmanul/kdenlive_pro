@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: BSD-2-Clause
+# SPDX-FileCopyrightText: vpinon@kde.org, jk.kdedev@smartlab.uber.space, montel@kde.org, avilla@FreeBSD.org, jb@kdenlive.org, vincent.pinon@asygn.com
+
 cmake_minimum_required(VERSION 3.16)
 
 # An odd patch version number means development version, while an even one means

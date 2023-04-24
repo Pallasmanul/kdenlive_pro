@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: BSD-2-Clause
+# SPDX-FileCopyrightText: jb@kdenlive.org
+
 INSTALL(FILES 
     checkpackages.py
     otiointerface.py

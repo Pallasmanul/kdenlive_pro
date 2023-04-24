@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: BSD-2-Clause
+# SPDX-FileCopyrightText: jb@kdenlive.org, jk.kdedev@smartlab.uber.space
+
 set(kdenlive_SRCS
   ${kdenlive_SRCS}
   widgets/choosecolorwidget.cpp

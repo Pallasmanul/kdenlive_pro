@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: BSD-2-Clause
+# SPDX-FileCopyrightText: jb@kdenlive.org
+
 INSTALL(FILES 
 PAL/bi-linear_x.pgm
 PAL/bi-linear_y.pgm

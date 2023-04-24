@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: BSD-2-Clause
+# SPDX-FileCopyrightText: jb@kdenlive.org, jk.kdedev@smartlab.uber.space
+
 INSTALL (FILES 
 
 audiobalance.xml

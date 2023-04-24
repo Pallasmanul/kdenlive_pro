@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: BSD-2-Clause
+# SPDX-FileCopyrightText: simon.eu@gmail.com
+
 
 message(STATUS "Building experimental executables")
 

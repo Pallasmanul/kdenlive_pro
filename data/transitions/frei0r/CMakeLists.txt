@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: BSD-2-Clause
+# SPDX-FileCopyrightText: jk.kdedev@smartlab.uber.space, jb@kdenlive.org
+
 INSTALL (FILES 
 frei0r_addition.xml
 frei0r_addition_alpha.xml

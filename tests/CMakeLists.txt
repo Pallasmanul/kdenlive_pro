@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: BSD-2-Clause
+# SPDX-FileCopyrightText: vincent.pinon@asygn.com, erjiang@alumni.iu.edu, jk.kdedev@smartlab.uber.space
+
 include_directories(${MLT_INCLUDE_DIR} ${MLTPP_INCLUDE_DIR} ..)
 set(TEST_SOURCES ${CMAKE_CURRENT_SOURCE_DIR})
 configure_file(tests_definitions.h.in tests_definitions.h)

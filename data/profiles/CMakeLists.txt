@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: BSD-2-Clause
+# SPDX-FileCopyrightText: jb@kdenlive.org
+
 INSTALL (FILES
 dci_2160p_2398
 dci_2160p_24

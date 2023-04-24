@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: BSD-2-Clause
+# SPDX-FileCopyrightText: jb@kdenlive.org
+
 add_subdirectory(effects)
 add_subdirectory(generators)
 add_subdirectory(transitions)
