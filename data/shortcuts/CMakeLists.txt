@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: BSD-2-Clause
-# SPDX-FileCopyrightText: 
+# SPDX-FileCopyrightText: Julius Künzel
 
 INSTALL(FILES 
 	Premiere

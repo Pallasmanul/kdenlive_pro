@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: BSD-2-Clause
-# SPDX-FileCopyrightText: 
+# SPDX-FileCopyrightText: Nicolas Carion
 
 set(kdenlive_SRCS
   ${kdenlive_SRCS}

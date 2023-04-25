@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: BSD-2-Clause
-# SPDX-FileCopyrightText: 
+# SPDX-FileCopyrightText: Vincent PINON
 
 add_subdirectory(dialogs)
 set(kdenlive_SRCS

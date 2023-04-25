@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: BSD-2-Clause
-# SPDX-FileCopyrightText: 
+# SPDX-FileCopyrightText: Nicolas Carion
 
 include_directories(${MLT_INCLUDE_DIR})
 kde_enable_exceptions()

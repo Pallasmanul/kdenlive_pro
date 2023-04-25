@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: BSD-2-Clause
-# SPDX-FileCopyrightText: 
+# SPDX-FileCopyrightText: Jean-Baptiste Mardelle
 
 set(QT_DONT_USE_QTGUI 1)
 if(NOT NODBUS)

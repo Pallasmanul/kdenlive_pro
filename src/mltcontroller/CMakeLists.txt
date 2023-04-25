@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: BSD-2-Clause
-# SPDX-FileCopyrightText: 
+# SPDX-FileCopyrightText: Jean-Baptiste Mardelle
 
 set(kdenlive_SRCS
   ${kdenlive_SRCS}
