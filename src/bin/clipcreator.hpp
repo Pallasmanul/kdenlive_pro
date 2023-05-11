@@ -62,6 +62,8 @@ QString createPlaylistClip(const QString &parentFolder, const std::shared_ptr<Pr
 QString createPlaylistClipWithUndo(const QString &name, std::pair<int, int> tracks, const QString &parentFolder, const std::shared_ptr<ProjectItemModel> &model,
                                    Fun &undo, Fun &redo);
 
+QDomElement createSimpleSequenceClip(const QString &name, const QUuid &uuid, const QString &parentFolder, const std::shared_ptr<ProjectItemModel> &model);
+
 /** @brief Create a slideshow clip
    @param path : path to the selected folder
    @param duration: this should be nbr of images * duration of one image

@@ -74,6 +74,7 @@ void ProjectItemModel::buildPlaylist(const QUuid uuid)
     m_fileWatcher->clear();
     m_extraPlaylists.clear();
     m_projectTractor.reset();
+    m_registeredSequences.clear();
     m_binPlaylist.reset(new BinPlaylist(uuid));
     m_projectTractor.reset(new Mlt::Tractor(*pCore->getProjectProfile()));
     m_projectTractor->set("kdenlive:projectTractor", 1);
@@ -475,6 +476,26 @@ std::shared_ptr<ProjectClip> ProjectItemModel::getClipByBinID(const QString &bin
     return nullptr;
 }
 
+std::shared_ptr<ProjectClip> ProjectItemModel::getClipBySequenceID(const QUuid &uuid)
+{
+    qDebug() << ":::: REQUESTING UUID: " << uuid << "\nESISTING: " << m_registeredSequences.keys();
+    Q_ASSERT(m_registeredSequences.contains(uuid));
+    const QString bid = m_registeredSequences.value(uuid);
+    return getClipByBinID(bid);
+}
+
+void ProjectItemModel::registerSequence(const QUuid uuid, const QString id)
+{
+    if (!m_registeredSequences.contains(uuid)) {
+        m_registeredSequences.insert(uuid, id);
+    }
+}
+
+const QList<QUuid> ProjectItemModel::registeredSequences() const
+{
+    return m_registeredSequences.keys();
+}
+
 const QVector<uint8_t> ProjectItemModel::getAudioLevelsByBinID(const QString &binId, int stream)
 {
     READ_LOCK();
@@ -586,13 +607,16 @@ QStringList ProjectItemModel::getEnclosingFolderInfo(const QModelIndex &index) c
 
 void ProjectItemModel::clean()
 {
-    // QWriteLocker locker(&m_lock);
+    QWriteLocker locker(&m_lock);
     closing = true;
     pCore->taskManager.slotCancelJobs();
     m_extraPlaylists.clear();
+    m_registeredSequences.clear();
     std::vector<std::shared_ptr<AbstractProjectItem>> toDelete;
     toDelete.reserve(size_t(rootItem->childCount()));
     for (int i = 0; i < rootItem->childCount(); ++i) {
+        qDebug() << "... FOUND CLIP: " << std::static_pointer_cast<AbstractProjectItem>(rootItem->child(i))->clipId() << " = "
+                 << std::static_pointer_cast<AbstractProjectItem>(rootItem->child(i))->name();
         toDelete.push_back(std::static_pointer_cast<AbstractProjectItem>(rootItem->child(i)));
     }
     Fun undo = []() { return true; };
@@ -841,7 +865,7 @@ bool ProjectItemModel::requestAddBinClip(QString &id, const QDomElement &descrip
     std::shared_ptr<ProjectClip> new_clip =
         ProjectClip::construct(id, description, m_blankThumb, std::static_pointer_cast<ProjectItemModel>(shared_from_this()));
     bool res = addItem(new_clip, parentId, undo, redo);
-    if (res) {
+    if (res && new_clip->clipType() != ClipType::Timeline) {
         ClipLoadTask::start({ObjectType::BinClip, id.toInt()}, description, false, -1, -1, this, false, std::bind(readyCallBack, id));
     }
     return res;

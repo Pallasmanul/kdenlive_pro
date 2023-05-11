@@ -34,14 +34,20 @@ QDomElement createProducer(QDomDocument &xml, ClipType::ProducerType type, const
     xml.appendChild(prod);
     prod.setAttribute(QStringLiteral("type"), int(type));
     if (type == ClipType::Timeline) {
-        const QUuid uuid = QUuid::createUuid();
-        qDebug() << "::: CREATED XML PLAYLIST UUID: " << uuid;
-        prod.setAttribute(QStringLiteral("kdenlive:uuid"), uuid.toString());
+        // Uuid can be passed through the servce property
+        if (!service.isEmpty()) {
+            prod.setAttribute(QStringLiteral("kdenlive:uuid"), service);
+        } else {
+            const QUuid uuid = QUuid::createUuid();
+            prod.setAttribute(QStringLiteral("kdenlive:uuid"), uuid.toString());
+        }
     }
     prod.setAttribute(QStringLiteral("in"), QStringLiteral("0"));
     prod.setAttribute(QStringLiteral("length"), duration);
     std::unordered_map<QString, QString> properties;
-    properties[QStringLiteral("resource")] = resource;
+    if (!resource.isEmpty()) {
+        properties[QStringLiteral("resource")] = resource;
+    }
     if (!name.isEmpty()) {
         properties[QStringLiteral("kdenlive:clipname")] = name;
     }
@@ -78,6 +84,14 @@ QString ClipCreator::createColorClip(const QString &color, int duration, const Q
     std::function<void(const QString &)> callBack = [](const QString &binId) { pCore->activeBin()->selectClipById(binId); };
     bool res = model->requestAddBinClip(id, xml.documentElement(), parentFolder, i18n("Create color clip"), callBack);
     return res ? id : QStringLiteral("-1");
+}
+
+QDomElement ClipCreator::createSimpleSequenceClip(const QString &name, const QUuid &uuid, const QString &parentFolder,
+                                                  const std::shared_ptr<ProjectItemModel> &model)
+{
+    QDomDocument xml;
+    auto prod = createProducer(xml, ClipType::Timeline, QString(), name, 0, uuid.toString());
+    return xml.documentElement();
 }
 
 QString ClipCreator::createPlaylistClip(const QString &name, std::pair<int, int> tracks, const QString &parentFolder,

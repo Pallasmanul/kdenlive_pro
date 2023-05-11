@@ -168,17 +168,22 @@ ProjectClip::ProjectClip(const QString &id, const QDomElement &description, cons
 {
     m_clipStatus = FileStatus::StatusWaiting;
     m_thumbnail = thumb;
-    m_markerModel = std::make_shared<MarkerListModel>(m_binId, pCore->projectManager()->undoStack());
-    m_markerFilterModel.reset(new MarkerSortModel(this));
-    m_markerFilterModel->setSourceModel(m_markerModel.get());
-    m_markerFilterModel->setSortRole(MarkerListModel::PosRole);
-    m_markerFilterModel->sort(0, Qt::AscendingOrder);
     if (description.hasAttribute(QStringLiteral("type"))) {
         m_clipType = ClipType::ProducerType(description.attribute(QStringLiteral("type")).toInt());
         if (m_clipType == ClipType::Audio) {
             m_thumbnail = QIcon::fromTheme(QStringLiteral("audio-x-generic"));
         }
     }
+
+    m_markerModel = std::make_shared<MarkerListModel>(m_binId, pCore->projectManager()->undoStack());
+    m_markerFilterModel.reset(new MarkerSortModel(this));
+    m_markerFilterModel->setSourceModel(m_markerModel.get());
+    m_markerFilterModel->setSortRole(MarkerListModel::PosRole);
+    m_markerFilterModel->sort(0, Qt::AscendingOrder);
+    if (m_clipType == ClipType::Timeline) {
+        m_sequenceUuid = QUuid(getXmlProperty(description, QStringLiteral("kdenlive:uuid")));
+    }
+
     m_temporaryUrl = getXmlProperty(description, QStringLiteral("resource"));
     if (m_name.isEmpty()) {
         QString clipName = getXmlProperty(description, QStringLiteral("kdenlive:clipname"));
@@ -206,6 +211,11 @@ std::shared_ptr<ProjectClip> ProjectClip::construct(const QString &id, const QDo
 }
 
 ProjectClip::~ProjectClip() {}
+
+std::shared_ptr<MarkerListModel> ProjectClip::markerModel()
+{
+    return m_markerModel;
+}
 
 void ProjectClip::connectEffectStack()
 {
@@ -599,7 +609,7 @@ bool ProjectClip::setProducer(std::shared_ptr<Mlt::Producer> producer, bool gene
     isReloading = false;
     // Make sure we have a hash for this clip
     getFileHash();
-    Q_EMIT producerChanged(m_binId, m_masterProducer);
+    Q_EMIT producerChanged(m_binId, m_clipType == ClipType::Timeline ? m_masterProducer->parent() : *m_masterProducer.get());
     connectEffectStack();
 
     // Update info
@@ -650,7 +660,9 @@ bool ProjectClip::setProducer(std::shared_ptr<Mlt::Producer> producer, bool gene
         (m_clipType == ClipType::AV || m_clipType == ClipType::Audio || (m_hasAudio && m_clipType != ClipType::Timeline))) {
         AudioLevelsTask::start({ObjectType::BinClip, m_binId.toInt()}, this, false);
     }
-    pCore->bin()->reloadMonitorIfActive(clipId());
+    if (pCore->bin()) {
+        pCore->bin()->reloadMonitorIfActive(clipId());
+    }
     if (clearTrackProducers) {
         for (auto &p : m_audioProducers) {
             m_effectStack->removeService(p.second);
@@ -1880,8 +1892,10 @@ void ProjectClip::refreshTracksState(int tracksCount)
     if (tracksCount > -1) {
         setProducerProperty(QStringLiteral("kdenlive:sequenceproperties.tracksCount"), tracksCount);
     }
-    checkAudioVideo();
-    Q_EMIT refreshPropertiesPanel();
+    if (m_clipStatus == FileStatus::StatusReady) {
+        checkAudioVideo();
+        Q_EMIT refreshPropertiesPanel();
+    }
 }
 
 ClipPropertiesController *ProjectClip::buildProperties(QWidget *parent)

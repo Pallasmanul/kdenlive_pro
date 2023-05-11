@@ -25,17 +25,7 @@
 MarkerListModel::MarkerListModel(QString clipId, std::weak_ptr<DocUndoStack> undo_stack, QObject *parent)
     : QAbstractListModel(parent)
     , m_undoStack(std::move(undo_stack))
-    , m_guide(false)
     , m_clipId(std::move(clipId))
-    , m_lock(QReadWriteLock::Recursive)
-{
-    setup();
-}
-
-MarkerListModel::MarkerListModel(std::weak_ptr<DocUndoStack> undo_stack, QObject *parent)
-    : QAbstractListModel(parent)
-    , m_undoStack(std::move(undo_stack))
-    , m_guide(true)
     , m_lock(QReadWriteLock::Recursive)
 {
     setup();
@@ -266,9 +256,9 @@ bool MarkerListModel::addMarkers(const QMap<GenTime, QString> &markers, int type
     }
     if (res) {
         if (rename) {
-            PUSH_UNDO(undo, redo, m_guide ? i18n("Rename guide") : i18n("Rename marker"));
+            PUSH_UNDO(undo, redo, i18n("Rename marker"));
         } else {
-            PUSH_UNDO(undo, redo, m_guide ? i18n("Add guide") : i18n("Add marker"));
+            PUSH_UNDO(undo, redo, i18n("Add marker"));
         }
     }
     return res;
@@ -284,9 +274,9 @@ bool MarkerListModel::addMarker(GenTime pos, const QString &comment, int type)
     bool res = addMarker(pos, comment, type, undo, redo);
     if (res) {
         if (rename) {
-            PUSH_UNDO(undo, redo, m_guide ? i18n("Rename guide") : i18n("Rename marker"));
+            PUSH_UNDO(undo, redo, i18n("Rename marker"));
         } else {
-            PUSH_UNDO(undo, redo, m_guide ? i18n("Add guide") : i18n("Add marker"));
+            PUSH_UNDO(undo, redo, i18n("Add marker"));
         }
     }
     return res;
@@ -316,7 +306,7 @@ bool MarkerListModel::removeMarker(GenTime pos)
 
     bool res = removeMarker(pos, undo, redo);
     if (res) {
-        PUSH_UNDO(undo, redo, m_guide ? i18n("Delete guide") : i18n("Delete marker"));
+        PUSH_UNDO(undo, redo, i18n("Delete marker"));
     }
     return res;
 }
@@ -343,7 +333,7 @@ bool MarkerListModel::editMarker(GenTime oldPos, GenTime pos, QString comment, i
         res = addMarker(pos, comment, type, undo, redo);
     }
     if (res) {
-        PUSH_UNDO(undo, redo, m_guide ? i18n("Edit guide") : i18n("Edit marker"));
+        PUSH_UNDO(undo, redo, i18n("Edit marker"));
     } else {
         bool undone = undo();
         Q_ASSERT(undone);
@@ -453,9 +443,8 @@ bool MarkerListModel::moveMarkers(const QList<CommentedTime> &markers, GenTime f
 Fun MarkerListModel::changeComment_lambda(GenTime pos, const QString &comment, int type)
 {
     QWriteLocker locker(&m_lock);
-    auto guide = m_guide;
     auto clipId = m_clipId;
-    return [guide, clipId, pos, comment, type, model = getModel(guide, clipId)]() {
+    return [clipId, pos, comment, type, model = getModel(clipId)]() {
         Q_ASSERT(model->hasMarker(pos));
         int mid = model->getIdFromPos(pos);
         int row = model->getRowfromId(mid);
@@ -469,9 +458,8 @@ Fun MarkerListModel::changeComment_lambda(GenTime pos, const QString &comment, i
 Fun MarkerListModel::addMarker_lambda(GenTime pos, const QString &comment, int type)
 {
     QWriteLocker locker(&m_lock);
-    auto guide = m_guide;
     auto clipId = m_clipId;
-    return [guide, clipId, pos, comment, type, model = getModel(guide, clipId)]() {
+    return [clipId, pos, comment, type, model = getModel(clipId)]() {
         Q_ASSERT(model->hasMarker(pos) == false);
         // We determine the row of the newly added marker
         int mid = TimelineModel::getNextId();
@@ -488,9 +476,8 @@ Fun MarkerListModel::addMarker_lambda(GenTime pos, const QString &comment, int t
 Fun MarkerListModel::deleteMarker_lambda(GenTime pos)
 {
     QWriteLocker locker(&m_lock);
-    auto guide = m_guide;
     auto clipId = m_clipId;
-    return [guide, clipId, pos, model = getModel(guide, clipId)]() {
+    return [clipId, pos, model = getModel(clipId)]() {
         Q_ASSERT(model->hasMarker(pos));
         int mid = model->getIdFromPos(pos);
         int row = model->getRowfromId(mid);
@@ -503,11 +490,8 @@ Fun MarkerListModel::deleteMarker_lambda(GenTime pos)
     };
 }
 
-std::shared_ptr<MarkerListModel> MarkerListModel::getModel(bool guide, const QString &clipId)
+std::shared_ptr<MarkerListModel> MarkerListModel::getModel(const QString &clipId)
 {
-    if (guide) {
-        return std::static_pointer_cast<MarkerListModel>(shared_from_this());
-    }
     return pCore->bin()->getBinClip(clipId)->getMarkerModel();
 }
 
@@ -707,7 +691,7 @@ bool MarkerListModel::importFromFile(const QString &fileData, bool ignoreConflic
         res = importFromTxt(fileData, undo, redo);
     }
     if (res) {
-        PUSH_UNDO(undo, redo, m_guide ? i18n("Import guides") : i18n("Import markers"));
+        PUSH_UNDO(undo, redo, i18n("Import markers"));
     }
     return res;
 }
@@ -718,7 +702,7 @@ bool MarkerListModel::importFromJson(const QString &data, bool ignoreConflicts, 
     Fun redo = []() { return true; };
     bool result = importFromJson(data, ignoreConflicts, undo, redo);
     if (result && pushUndo) {
-        PUSH_UNDO(undo, redo, m_guide ? i18n("Import guides") : i18n("Import markers"));
+        PUSH_UNDO(undo, redo, i18n("Import markers"));
     }
     return result;
 }
@@ -871,7 +855,7 @@ bool MarkerListModel::removeAllMarkers()
             return false;
         }
     }
-    PUSH_UNDO(local_undo, local_redo, m_guide ? i18n("Delete all guides") : i18n("Delete all markers"));
+    PUSH_UNDO(local_undo, local_redo, i18n("Delete all markers"));
     return true;
 }
 
@@ -883,13 +867,13 @@ bool MarkerListModel::editMultipleMarkersGui(const QList<GenTime> positions, QWi
         pCore->displayMessage(i18n("No guide found at current position"), InformationMessage);
     }
     QDialog d(parent);
-    d.setWindowTitle(m_guide ? i18n("Edit Guides Category") : i18n("Edit Markers Category"));
+    d.setWindowTitle(i18n("Edit Markers Category"));
     QDialogButtonBox *buttonBox = new QDialogButtonBox(QDialogButtonBox::Cancel | QDialogButtonBox::Ok);
     auto *l = new QVBoxLayout;
     d.setLayout(l);
     d.connect(buttonBox, &QDialogButtonBox::rejected, &d, &QDialog::reject);
     d.connect(buttonBox, &QDialogButtonBox::accepted, &d, &QDialog::accept);
-    QLabel lab(m_guide ? i18n("Guides Category") : i18n("Markers Category"), &d);
+    QLabel lab(i18n("Markers Category"), &d);
     MarkerCategoryChooser chooser(&d);
     chooser.setMarkerModel(this);
     chooser.setAllowAll(false);
@@ -907,7 +891,7 @@ bool MarkerListModel::editMultipleMarkersGui(const QList<GenTime> positions, QWi
                 addMarker(pos, marker.comment(), category, undo, redo);
             }
         }
-        PUSH_UNDO(undo, redo, m_guide ? i18n("Edit guides") : i18n("Edit markers"));
+        PUSH_UNDO(undo, redo, i18n("Edit markers"));
         return true;
     }
     return false;
@@ -922,10 +906,10 @@ bool MarkerListModel::editMarkerGui(const GenTime &pos, QWidget *parent, bool cr
     }
 
     if (!exists && createIfNotFound) {
-        marker = CommentedTime(pos, clip == nullptr ? i18n("guide") : QString(), KdenliveSettings::default_marker_type());
+        marker = CommentedTime(pos, QString(), KdenliveSettings::default_marker_type());
     }
 
-    QScopedPointer<MarkerDialog> dialog(new MarkerDialog(clip, marker, m_guide ? i18n("Edit Guide") : i18n("Edit Marker"), false, parent));
+    QScopedPointer<MarkerDialog> dialog(new MarkerDialog(clip, marker, i18n("Edit Marker"), false, parent));
 
     if (dialog->exec() == QDialog::Accepted) {
         marker = dialog->newMarker();
@@ -947,10 +931,10 @@ bool MarkerListModel::addMultipleMarkersGui(const GenTime &pos, QWidget *parent,
     }
 
     if (!exists && createIfNotFound) {
-        marker = CommentedTime(pos, clip == nullptr ? i18n("guide") : QString(), KdenliveSettings::default_marker_type());
+        marker = CommentedTime(pos, QString(), KdenliveSettings::default_marker_type());
     }
 
-    QScopedPointer<MarkerDialog> dialog(new MarkerDialog(clip, marker, m_guide ? i18n("Add Guides") : i18n("Add Markers"), true, parent));
+    QScopedPointer<MarkerDialog> dialog(new MarkerDialog(clip, marker, i18n("Add Markers"), true, parent));
     if (dialog->exec() == QDialog::Accepted) {
         int max = dialog->addMultiMarker() ? dialog->getOccurrences() : 1;
         GenTime interval = dialog->getInterval();
@@ -965,7 +949,7 @@ bool MarkerListModel::addMultipleMarkersGui(const GenTime &pos, QWidget *parent,
             addMarker(startTime, marker.comment(), marker.markerType(), undo, redo);
             startTime += interval;
         }
-        PUSH_UNDO(undo, redo, m_guide ? i18n("Add guides") : i18n("Add markers"));
+        PUSH_UNDO(undo, redo, i18n("Add markers"));
     }
     return false;
 }

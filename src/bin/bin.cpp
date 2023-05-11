@@ -2141,7 +2141,6 @@ void Bin::cleanDocument()
         }
     }
     delete m_itemView;
-    m_openedPlaylists.clear();
     m_itemView = nullptr;
     isLoading = false;
     shouldCheckProfile = false;
@@ -5707,13 +5706,6 @@ void Bin::removeMarkerCategories(QList<int> toRemove, const QMap<int, int> remap
     }
 }
 
-void Bin::registerSequence(const QUuid uuid, const QString id)
-{
-    if (!m_openedPlaylists.contains(uuid)) {
-        m_openedPlaylists.insert(uuid, id);
-    }
-}
-
 void Bin::removeReferencedClips(const QUuid &uuid)
 {
     QList<std::shared_ptr<ProjectClip>> clipList = m_itemModel->getRootFolder()->childClips();
@@ -5741,14 +5733,14 @@ QStringList Bin::sequenceReferencedClips(const QUuid &uuid) const
 
 void Bin::updateSequenceClip(const QUuid &uuid, int duration, int pos, std::shared_ptr<Mlt::Producer> prod)
 {
-    Q_ASSERT(m_openedPlaylists.contains(uuid));
     if (pos > -1) {
         m_doc->setSequenceProperty(uuid, QStringLiteral("position"), pos);
     }
-    if (m_openedPlaylists.contains(uuid) && m_doc->isModified()) {
-        const QString binId = m_openedPlaylists.value(uuid);
-        std::shared_ptr<ProjectClip> clip = m_itemModel->getClipByBinID(binId);
-        Q_ASSERT(clip != nullptr);
+    if (!m_doc->isModified()) {
+        return;
+    }
+    auto clip = m_itemModel->getClipBySequenceID(uuid);
+    if (clip) {
         if (prod) {
             // On timeline close, update the stored sequence producer
             std::shared_ptr<Mlt::Tractor> trac(new Mlt::Tractor(prod->parent()));
@@ -5765,7 +5757,7 @@ void Bin::updateSequenceClip(const QUuid &uuid, int duration, int pos, std::shar
             clip->setProperties(properties);
             // Reset thumbs producer
             clip->resetSequenceThumbnails();
-            ClipLoadTask::start({ObjectType::BinClip, binId.toInt()}, QDomElement(), true, -1, -1, this);
+            ClipLoadTask::start({ObjectType::BinClip, clip->clipId().toInt()}, QDomElement(), true, -1, -1, this);
             m_doc->sequenceThumbUpdated(uuid);
             clip->reloadTimeline();
         }
@@ -5796,34 +5788,20 @@ void Bin::updateTimelineOccurrences()
     }
 }
 
-const QString Bin::sequenceBinId(const QUuid &uuid)
-{
-    if (m_openedPlaylists.contains(uuid)) {
-        return m_openedPlaylists.value(uuid);
-    }
-    return QString();
-}
-
 void Bin::setSequenceThumbnail(const QUuid &uuid, int frame)
 {
-    const QString bid = sequenceBinId(uuid);
-    if (!bid.isEmpty()) {
-        std::shared_ptr<ProjectClip> sequenceClip = getBinClip(bid);
-        if (sequenceClip) {
-            m_doc->setSequenceProperty(uuid, QStringLiteral("thumbnailFrame"), frame);
-            ClipLoadTask::start({ObjectType::BinClip, bid.toInt()}, QDomElement(), true, -1, -1, this);
-        }
+    auto sequenceClip = m_itemModel->getClipBySequenceID(uuid);
+    if (sequenceClip) {
+        m_doc->setSequenceProperty(uuid, QStringLiteral("thumbnailFrame"), frame);
+        ClipLoadTask::start({ObjectType::BinClip, sequenceClip->clipId().toInt()}, QDomElement(), true, -1, -1, this);
     }
 }
 
 void Bin::updateSequenceAVType(const QUuid &uuid, int tracksCount)
 {
-    const QString bId = sequenceBinId(uuid);
-    if (!bId.isEmpty()) {
-        std::shared_ptr<ProjectClip> sequenceClip = getBinClip(bId);
-        if (sequenceClip) {
-            sequenceClip->refreshTracksState(tracksCount);
-        }
+    auto sequenceClip = m_itemModel->getClipBySequenceID(uuid);
+    if (sequenceClip) {
+        sequenceClip->refreshTracksState(tracksCount);
     }
 }
 

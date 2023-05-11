@@ -56,6 +56,12 @@ public:
 
     /** @brief Returns a clip from the hierarchy, given its id */
     std::shared_ptr<ProjectClip> getClipByBinID(const QString &binId);
+    /** @brief Returns a Sequence clip from the hierarchy, given its sequence UUID */
+    std::shared_ptr<ProjectClip> getClipBySequenceID(const QUuid &uuid);
+    /** @brief Register a new sequence clip in this model */
+    void registerSequence(const QUuid uuid, const QString id);
+    /** @brief Returns a list of all registered sequences in the project */
+    const QList<QUuid> registeredSequences() const;
     /** @brief Returns audio levels for a clip from its id */
     const QVector <uint8_t>getAudioLevelsByBinID(const QString &binId, int stream);
     double getAudioMaxLevel(const QString &binId, int stream);
@@ -279,6 +285,8 @@ private:
     std::unique_ptr<FileWatcher> m_fileWatcher;
     std::unordered_map<QString, std::shared_ptr<Mlt::Tractor>> m_extraPlaylists;
     std::shared_ptr<Mlt::Tractor> m_projectTractor;
+    /** @brief A map of opened timeline clips {uuid, bin id} */
+    QMap<QUuid, QString> m_registeredSequences;
 
     int m_nextId;
     QIcon m_blankThumb;

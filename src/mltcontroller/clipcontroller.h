@@ -213,7 +213,7 @@ protected:
     /** @brief Mutex to protect the producer properties on read/write */
     mutable QReadWriteLock m_producerLock;
 
-    virtual void emitProducerChanged(const QString & /*unused*/, const std::shared_ptr<Mlt::Producer> & /*unused*/){};
+    // virtual void emitProducerChanged(const QString & /*unused*/, const std::shared_ptr<Mlt::Producer> & /*unused*/){};
     virtual void connectEffectStack(){};
 
     // Update audio stream info

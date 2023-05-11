@@ -126,16 +126,8 @@ TimelineModel::TimelineModel(const QUuid &uuid, Mlt::Profile *profile, std::weak
     , m_videoTarget(-1)
     , m_editMode(TimelineMode::NormalEdit)
     , m_closing(false)
-    , m_guidesModel(new MarkerListModel(m_undoStack, this))
     , m_softDelete(false)
 {
-    connect(m_guidesModel.get(), &MarkerListModel::categoriesChanged, this, &TimelineModel::saveGuideCategories);
-    m_guidesFilterModel.reset(new MarkerSortModel(this));
-    m_guidesFilterModel->setSourceModel(m_guidesModel.get());
-    m_guidesFilterModel->setSortRole(MarkerListModel::PosRole);
-    m_guidesFilterModel->sort(0, Qt::AscendingOrder);
-    m_guidesModel->loadCategories(KdenliveSettings::guidesCategories());
-
     // Create black background track
     m_blackClip->set("kdenlive:playlistid", "black_track");
     m_blackClip->set("mlt_type", "producer");
@@ -195,6 +187,17 @@ TimelineModel::~TimelineModel()
             clip.second->deregisterClipToBin();
         }
     }
+}
+
+void TimelineModel::setMarkerModel(std::shared_ptr<MarkerListModel> markerModel)
+{
+    m_guidesModel = markerModel;
+    m_guidesModel->registerSnapModel(std::static_pointer_cast<SnapInterface>(m_snaps));
+    m_guidesFilterModel.reset(new MarkerSortModel(this));
+    m_guidesFilterModel->setSourceModel(m_guidesModel.get());
+    m_guidesFilterModel->setSortRole(MarkerListModel::PosRole);
+    m_guidesFilterModel->sort(0, Qt::AscendingOrder);
+    m_guidesModel->loadCategories(KdenliveSettings::guidesCategories());
 }
 
 int TimelineModel::getTracksCount() const
@@ -6760,20 +6763,22 @@ QByteArray TimelineModel::timelineHash()
         fileData.append(compoData.toLatin1());
     }
     // Guides
-    QString guidesData = m_guidesModel->toJson();
-    fileData.append(guidesData.toUtf8().constData());
+    if (m_guidesModel) {
+        QString guidesData = m_guidesModel->toJson();
+        fileData.append(guidesData.toUtf8().constData());
+    }
     QByteArray fileHash = QCryptographicHash::hash(fileData, QCryptographicHash::Md5);
     return fileHash;
-}
-
-std::shared_ptr<MarkerListModel> TimelineModel::getGuideModel()
-{
-    return m_guidesModel;
 }
 
 std::shared_ptr<MarkerSortModel> TimelineModel::getFilteredGuideModel()
 {
     return m_guidesFilterModel;
+}
+
+std::shared_ptr<MarkerListModel> TimelineModel::getGuideModel()
+{
+    return m_guidesModel;
 }
 
 bool TimelineModel::trackIsLocked(int trackId) const

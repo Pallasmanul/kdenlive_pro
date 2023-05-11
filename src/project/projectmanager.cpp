@@ -401,7 +401,6 @@ bool ProjectManager::closeCurrentDocument(bool saveChanges, bool quit)
     }
     pCore->monitorManager()->clipMonitor()->slotOpenClip(nullptr);
     pCore->monitorManager()->projectMonitor()->setProducer(nullptr);
-
     pCore->bin()->cleanDocument();
     delete m_project;
     m_project = nullptr;
@@ -677,6 +676,17 @@ void ProjectManager::openFile(const QUrl &url)
     doOpenFile(url, nullptr);
 }
 
+void ProjectManager::abortLoading()
+{
+    KMessageBox::error(pCore->window(), i18n("Could not recover corrupted file."));
+    delete m_progressDialog;
+    m_progressDialog = nullptr;
+    // Don't propose to save corrupted doc
+    m_project->setModified(false);
+    // Open default blank document
+    newFile(false);
+}
+
 void ProjectManager::doOpenFile(const QUrl &url, KAutoSaveFile *stale, bool isBackup)
 {
     Q_ASSERT(m_project == nullptr);
@@ -776,17 +786,10 @@ void ProjectManager::doOpenFile(const QUrl &url, KAutoSaveFile *stale, bool isBa
     // Set default target tracks to upper audio / lower video tracks
     m_project = doc;
     QDateTime documentDate = QFileInfo(m_project->url().toLocalFile()).lastModified();
-
     if (!updateTimeline(m_project->getDocumentProperty(QStringLiteral("position")).toInt(), true,
                         m_project->getDocumentProperty(QStringLiteral("previewchunks")), m_project->getDocumentProperty(QStringLiteral("dirtypreviewchunks")),
                         documentDate, m_project->getDocumentProperty(QStringLiteral("disablepreview")).toInt())) {
-        KMessageBox::error(pCore->window(), i18n("Could not recover corrupted file."));
-        delete m_progressDialog;
-        m_progressDialog = nullptr;
-        // Don't propose to save corrupted doc
-        m_project->setModified(false);
-        // Open default blank document
-        newFile(false);
+        abortLoading();
         return;
     }
 
@@ -809,21 +812,18 @@ void ProjectManager::doOpenFile(const QUrl &url, KAutoSaveFile *stale, bool isBa
         if (binId.isEmpty()) {
             if (pCore->projectItemModel()->sequenceCount() == 0) {
                 // Something is broken here, abort
-                KMessageBox::error(pCore->window(), i18n("Could not recover corrupted file."));
-                delete m_progressDialog;
-                m_progressDialog = nullptr;
-                // Don't propose to save broken document
-                m_project->setModified(false);
-                // Open default blank document
-                newFile(false);
+                abortLoading();
                 return;
             }
-        }
-        if (!binId.isEmpty()) {
-            openTimeline(binId, activeUuid);
         } else {
-            qDebug() << ":::::::::\n\nNO BINID FOR TIMELINE: " << activeUuid << "\n\n:::::::::::::";
+            openTimeline(binId, activeUuid);
         }
+    }
+    const QList<QUuid> sequences = pCore->projectItemModel()->registeredSequences();
+    if (sequences.isEmpty()) {
+        // Corrupted project file, abort
+        abortLoading();
+        return;
     }
     pCore->window()->connectDocument();
 
@@ -1200,7 +1200,25 @@ bool ProjectManager::updateTimeline(int pos, bool createNewTab, const QString &c
         requestBackup(i18n("Project file is corrupted (no tracks). Try to find a backup file?"));
         return false;
     }
+    // Build primary timeline sequence
+    Fun undo = []() { return true; };
+    Fun redo = []() { return true; };
+    pCore->projectItemModel()->buildPlaylist(uuid);
+    // Create the timelines folder to store timeline clips
+    QString folderId = pCore->projectItemModel()->getFolderIdByName(i18n("Sequences"));
+    if (folderId.isEmpty()) {
+        pCore->projectItemModel()->requestAddFolder(folderId, i18n("Sequences"), QStringLiteral("-1"), undo, redo);
+    }
+    pCore->projectItemModel()->setSequencesFolder(folderId.toInt());
+    QDomElement xml = ClipCreator::createSimpleSequenceClip(i18n("Sequence 1"), uuid, folderId, pCore->projectItemModel());
+    QString mainId;
+    pCore->projectItemModel()->requestAddBinClip(mainId, xml, folderId, undo, redo);
+    pCore->projectItemModel()->registerSequence(uuid, mainId);
+    qDebug() << ":::: CREATED SEQUENCE CLIP WITH ID: " << mainId << "\n_____________";
+
     std::shared_ptr<TimelineItemModel> timelineModel = TimelineItemModel::construct(uuid, pCore->getProjectProfile(), m_project->commandStack());
+    auto newBinClip = pCore->projectItemModel()->getClipByBinID(mainId);
+    timelineModel->setMarkerModel(newBinClip->markerModel());
 
     if (m_project->hasDocumentProperty(QStringLiteral("groups"))) {
         // This is a pre-nesting project file, move all timeline properties to the timelineModel's tractor
@@ -1226,13 +1244,11 @@ bool ProjectManager::updateTimeline(int pos, bool createNewTab, const QString &c
         documentTimeline =
             pCore->window()->openTimeline(uuid, i18n("Sequence 1"), timelineModel, pCore->monitorManager()->projectMonitor()->getControllerProxy());
     }
-    pCore->projectItemModel()->buildPlaylist(uuid);
     if (m_activeTimelineModel == nullptr) {
         m_activeTimelineModel = timelineModel;
         m_project->activeUuid = timelineModel->uuid();
     }
-    if (!constructTimelineFromTractor(timelineModel, pCore->projectItemModel(), tractor, m_progressDialog, m_project->modifiedDecimalPoint(), chunks, dirty,
-                                      enablePreview)) {
+    if (!constructTimelineFromTractor(timelineModel, nullptr, tractor, m_progressDialog, m_project->modifiedDecimalPoint(), chunks, dirty, enablePreview)) {
         // TODO: act on project load failure
         qDebug() << "// Project failed to load!!";
         requestBackup(i18n("Project file is corrupted - failed to load tracks. Try to find a backup file?"));
@@ -1241,15 +1257,6 @@ bool ProjectManager::updateTimeline(int pos, bool createNewTab, const QString &c
     // Free memory used by original playlist
     xmlProd->clear();
     xmlProd.reset(nullptr);
-    // Build primary timeline sequence
-    Fun undo = []() { return true; };
-    Fun redo = []() { return true; };
-    // Create the timelines folder to store timeline clips
-    QString folderId = pCore->projectItemModel()->getFolderIdByName(i18n("Sequences"));
-    if (folderId.isEmpty()) {
-        pCore->projectItemModel()->requestAddFolder(folderId, i18n("Sequences"), QStringLiteral("-1"), undo, redo);
-    }
-    QString mainId;
     QPair<int, int> tracks = timelineModel->getAVtracksCount();
     std::shared_ptr<Mlt::Producer> prod = std::make_shared<Mlt::Producer>(timelineModel->tractor()->cut());
     prod->parent().set("id", uuid.toString().toUtf8().constData());
@@ -1284,12 +1291,10 @@ bool ProjectManager::updateTimeline(int pos, bool createNewTab, const QString &c
         prod->parent().set("out", projectDuration);
     }
     prod->parent().set("kdenlive:producer_type", ClipType::Timeline);
+    newBinClip->setProducer(prod);
     // QString retain = QStringLiteral("xml_retain %1").arg(uuid.toString());
     // pCore->projectItemModel()->projectTractor()->set(retain.toUtf8().constData(), timelineModel->tractor()->get_service(), 0);
-    pCore->projectItemModel()->requestAddBinClip(mainId, prod, folderId, undo, redo);
-    pCore->projectItemModel()->setSequencesFolder(folderId.toInt());
     if (pCore->window()) {
-        pCore->bin()->registerSequence(uuid, mainId);
         QObject::connect(timelineModel.get(), &TimelineModel::durationUpdated, [id = mainId, model = timelineModel]() {
             std::shared_ptr<ProjectClip> mainClip = pCore->bin()->getBinClip(id);
             qDebug() << "::: UPDATING MAIN TIMELINE DURATION: " << model->duration();
@@ -1642,9 +1647,8 @@ bool ProjectManager::openTimeline(const QString &id, const QUuid &uuid, int posi
         });
         m_project->loadSequenceGroupsAndGuides(uuid);
         clip->setProducer(prod, false, false);
-        if (pCore->bin()) {
-            pCore->bin()->registerSequence(uuid, id);
-        }
+        pCore->projectItemModel()->registerSequence(uuid, id);
+        timelineModel->setMarkerModel(clip->markerModel());
     } else {
         qDebug() << "GOT XML SERV: " << xmlProd->type() << " = " << xmlProd->parent().type();
         // Mlt::Service s(xmlProd->producer()->get_service());
@@ -1701,8 +1705,9 @@ bool ProjectManager::openTimeline(const QString &id, const QUuid &uuid, int posi
         prod->parent().set("kdenlive:description", clip->description().toUtf8().constData());
         prod->parent().set("kdenlive:uuid", uuid.toString().toUtf8().constData());
         prod->parent().set("kdenlive:producer_type", ClipType::Timeline);
+        pCore->projectItemModel()->registerSequence(uuid, id);
+        timelineModel->setMarkerModel(clip->markerModel());
         if (pCore->bin()) {
-            pCore->bin()->registerSequence(uuid, id);
             pCore->bin()->updateSequenceClip(uuid, timelineModel->duration(), -1, prod);
         }
         clip->setProducer(prod, false, false);

@@ -1617,11 +1617,11 @@ QMap<QString, QString> KdenliveDoc::documentProperties()
 
 void KdenliveDoc::loadDocumentGuides(const QUuid &uuid, std::shared_ptr<TimelineItemModel> model)
 {
-    const QString guides = getSequenceProperty(uuid, QStringLiteral("guides"));
+    /*const QString guides = getSequenceProperty(uuid, QStringLiteral("guides"));
     if (!guides.isEmpty()) {
         model->getGuideModel()->importFromJson(guides, true, false);
         clearSequenceProperty(uuid, QStringLiteral("guides"));
-    }
+    }*/
 }
 
 void KdenliveDoc::loadDocumentProperties()
@@ -2107,7 +2107,7 @@ void KdenliveDoc::loadSequenceGroupsAndGuides(const QUuid &uuid)
         // clearSequenceProperty(uuid, QStringLiteral("groups"));
     }
     // Load guides
-    model->getGuideModel()->loadCategories(guidesCategories(), false);
+    // model->getGuideModel()->loadCategories(guidesCategories(), false);
     model->updateFieldOrderFilter(pCore->getCurrentProfile());
     loadDocumentGuides(uuid, model);
     connect(model.get(), &TimelineModel::saveGuideCategories, this, &KdenliveDoc::saveGuideCategories);
@@ -2134,8 +2134,9 @@ std::shared_ptr<MarkerSortModel> KdenliveDoc::getFilteredGuideModel(const QUuid 
 
 std::shared_ptr<MarkerListModel> KdenliveDoc::getGuideModel(const QUuid uuid) const
 {
-    Q_ASSERT(m_timelines.find(uuid) != m_timelines.end());
-    return m_timelines.value(uuid)->getGuideModel();
+    auto sequenceClip = pCore->projectItemModel()->getClipBySequenceID(uuid);
+    Q_ASSERT(sequenceClip != nullptr);
+    return sequenceClip->markerModel();
 }
 
 int KdenliveDoc::timelineCount() const

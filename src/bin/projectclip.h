@@ -104,6 +104,9 @@ public:
     /** @brief Returns the clip type as defined in definitions.h */
     ClipType::ProducerType clipType() const override;
 
+    /** @brief Get the marker model for this clip */
+    std::shared_ptr<MarkerListModel> markerModel();
+
     /** @brief Set rating on item */
     void setRating(uint rating) override;
 
@@ -296,7 +299,7 @@ protected:
     */
     void deregisterTimelineClip(int clipId, bool audioClip);
 
-    void emitProducerChanged(const QString &id, const std::shared_ptr<Mlt::Producer> &producer) override { Q_EMIT producerChanged(id, producer); };
+    // void emitProducerChanged(const QString &id, const std::shared_ptr<Mlt::Producer> &producer) override { Q_EMIT producerChanged(id, producer); };
     void replaceInTimeline();
     void connectEffectStack() override;
 
@@ -372,7 +375,7 @@ private:
     void updateDescription();
 
 Q_SIGNALS:
-    void producerChanged(const QString &, const std::shared_ptr<Mlt::Producer> &);
+    void producerChanged(const QString &, Mlt::Producer prod);
     void refreshPropertiesPanel();
     void refreshAnalysisPanel();
     void refreshClipDisplay();
