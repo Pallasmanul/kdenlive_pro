@@ -617,3 +617,35 @@ std::pair<QStringList, QStringList> ProviderModel::parseFilesResponse(const QByt
     }
     return std::pair<QStringList, QStringList>(urls, labels);
 }
+
+/**
+ * @brief ProviderModel::slotDownloadFiles
+ * @param id The providers id of the item the date
+ *
+ **/
+
+bool ProviderModel::slotDownloadFiles(const QUrl &uri, const QString &dst)
+{   
+    QNetworkRequest request(uri);
+    QNetworkReply *reply = m_networkManager->get(request);
+
+    QEventLoop eventloop;
+    QObject::connect(reply,SIGNAL(finished()), &eventloop, SLOT(quit()));
+    eventloop.exec();
+
+    if (reply->error() == QNetworkReply::NoError) {
+        QByteArray response = reply->readAll();
+        QFile file(dst);
+        if(file.open(QIODevice::WriteOnly))
+        {
+            file.write(response);
+            file.close();
+        }
+        reply->deleteLater();
+        return true;
+    } else {
+        return false;
+    }
+
+    return false;
+}

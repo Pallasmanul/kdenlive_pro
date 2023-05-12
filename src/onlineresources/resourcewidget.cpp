@@ -262,17 +262,16 @@ void ResourceWidget::slotSearchFinished(const QList<ResourceItemInfo> &list, int
     for (const ResourceItemInfo &item : qAsConst(list)) {
         message_line->setText(i18nc("@info:progress", "Parsing item %1 of %2…", count, list.count()));
         // if item has no name use "Created by Author", if item even has no author use "Unnamed"
-        QListWidgetItem *listItem = new QListWidgetItem(
-            item.name.isEmpty() ? (item.author.isEmpty() ? i18n("Unnamed") : i18nc("Created by author name", "Created by %1", item.author)) : item.name);
+        QListWidgetItem *listItem = new QListWidgetItem(item.name.isEmpty() ? (item.author.isEmpty() ? i18n("Unnamed") : i18nc("Created by author name", "Created by %1", item.author)) : item.name);
+
         if (!item.imageUrl.isEmpty()) {
             QUrl img(item.imageUrl);
             m_tmpThumbFile->close();
-            if (m_tmpThumbFile->open()) {
-                KIO::FileCopyJob *copyjob = KIO::file_copy(img, QUrl::fromLocalFile(m_tmpThumbFile->fileName()), -1, KIO::HideProgressInfo | KIO::Overwrite);
-                if (copyjob->exec()) {
-                    QPixmap pic(m_tmpThumbFile->fileName());
-                    listItem->setIcon(pic);
-                }
+            if(m_tmpThumbFile->open())
+            {
+                m_currentProvider->get()->slotDownloadFiles(img,m_tmpThumbFile->fileName());
+                QPixmap pic(m_tmpThumbFile->fileName());
+                listItem->setIcon(pic);
             }
         }
 

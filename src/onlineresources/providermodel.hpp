@@ -58,6 +58,7 @@ public:
 public Q_SLOTS:
     void slotStartSearch(const QString &searchText, int page);
     void slotFetchFiles(const QString &id);
+    bool slotDownloadFiles(const QUrl &uri , const QString &dst);
     // void slotShowResults(QNetworkReply *reply);
 
 protected:

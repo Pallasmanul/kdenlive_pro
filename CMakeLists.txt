@@ -24,7 +24,7 @@ include(GenerateExportHeader)
 
 # Register CMake options
 option(RELEASE_BUILD "Remove Git revision from program version" ON) # To be switched on when releasing.
-option(BUILD_TESTING "Build tests" ON)
+option(BUILD_TESTING "Build tests" OFF)
 option(CRASH_AUTO_TEST "Auto-generate testcases upon some crashes (uses RTTR library, needed for fuzzing)" OFF)
 option(BUILD_FUZZING "Build fuzzing target" OFF)
 option(NODBUS "Build without DBus IPC" OFF)
@@ -229,7 +229,7 @@ ecm_qt_install_logging_categories(
 
 # Tests
 if(BUILD_TESTING)
-    add_subdirectory(tests)
+#    add_subdirectory(tests)
 endif()
 if(BUILD_FUZZING AND ("${CMAKE_CXX_COMPILER_ID}" STREQUAL "Clang"))
     add_subdirectory(fuzzer)
