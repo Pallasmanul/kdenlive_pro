@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: BSD-2-Clause
+# SPDX-FileCopyrightText: Jean-Baptiste Mardelle <jb@kdenlive.org>, Julius Künzel <jk.kdedev@smartlab.uber.space>, Eric Jiang <erjiang@alumni.iu.edu>, Vincent Pinon <vincent.pinon@asygn.com>
+
 include_directories(${MLT_INCLUDE_DIR} ${MLTPP_INCLUDE_DIR} ..)
 set(TEST_SOURCES ${CMAKE_CURRENT_SOURCE_DIR})
 configure_file(tests_definitions.h.in tests_definitions.h)
@@ -7,6 +10,7 @@ set(KdenliveTest_SOURCES
     cachetest.cpp
     colorscopestest.cpp
     compositiontest.cpp
+    documenttest.cpp
     effectstest.cpp
     filetest.cpp
     groupstest.cpp
@@ -15,6 +19,7 @@ set(KdenliveTest_SOURCES
     mixtest.cpp
     modeltest.cpp
     movetest.cpp
+    nestingtest.cpp
     regressions.cpp
     rendermodeltest.cpp
     snaptest.cpp
@@ -26,6 +31,7 @@ set(KdenliveTest_SOURCES
     titlertest.cpp
     treetest.cpp
     trimmingtest.cpp
+    utilstest.cpp
 )
 
 include(ECMAddTests)

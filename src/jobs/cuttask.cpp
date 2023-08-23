@@ -16,6 +16,7 @@ SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
 #include "mainwindow.h"
 #include "profiles/profilemodel.hpp"
 #include "ui_cutjobdialog_ui.h"
+#include "utils/qstringutils.h"
 #include "xml/xml.hpp"
 
 #include <KIO/RenameDialog>
@@ -41,7 +42,7 @@ CutTask::CutTask(const ObjectId &owner, const QString &destination, const QStrin
 
 void CutTask::start(const ObjectId &owner, int in, int out, QObject *object, bool force)
 {
-    auto binClip = pCore->projectItemModel()->getClipByBinID(QString::number(owner.second));
+    auto binClip = pCore->projectItemModel()->getClipByBinID(QString::number(owner.itemId));
     ClipType::ProducerType type = binClip->clipType();
     if (type != ClipType::AV && type != ClipType::Audio && type != ClipType::Video) {
         // m_errorMessage.prepend(i18n("Cannot extract zone for this clip type."));
@@ -84,14 +85,13 @@ void CutTask::start(const ObjectId &owner, int in, int out, QObject *object, boo
         }
         warnMessage.append(i18n("Cannot copy audio codec %1, will re-encode.", audioCodec));
     }
-    QString transcoderExt = source.section(QLatin1Char('.'), -1);
-    transcoderExt.prepend(QLatin1Char('.'));
+
     QFileInfo finfo(source);
-    QString fileName = finfo.fileName().section(QLatin1Char('.'), 0, -2);
     QDir dir = finfo.absoluteDir();
     QString inString = QString::number(int(GenTime(in, pCore->getCurrentFps()).seconds()));
     QString outString = QString::number(int(GenTime(out, pCore->getCurrentFps()).seconds()));
-    QString path = dir.absoluteFilePath(fileName + QString("-%1-%2").arg(inString, outString) + transcoderExt);
+    QString fileName = QStringUtils::appendToFilename(finfo.fileName(), QString("-%1-%2").arg(inString, outString));
+    QString path = dir.absoluteFilePath(fileName);
 
     QPointer<QDialog> d = new QDialog(QApplication::activeWindow());
     Ui::CutJobDialog_UI ui;
@@ -123,6 +123,8 @@ void CutTask::start(const ObjectId &owner, int in, int out, QObject *object, boo
     ui.file_url->setMode(KFile::File);
     ui.extra_params->setMaximumHeight(QFontMetrics(QApplication::font()).lineSpacing() * 5);
     ui.file_url->setUrl(QUrl::fromLocalFile(path));
+
+    QString transcoderExt = QLatin1Char('.') + finfo.suffix();
 
     std::function<void()> callBack = [&ui, transcoderExt]() {
         if (ui.acodec->currentData().isNull()) {
@@ -182,12 +184,12 @@ void CutTask::start(const ObjectId &owner, int in, int out, QObject *object, boo
     CutTask *task = new CutTask(owner, path, encodingParams, in, out, KdenliveSettings::add_new_clip(), object);
     // Otherwise, start a filter thread.
     task->m_isForce = force;
-    pCore->taskManager.startTask(owner.second, task);
+    pCore->taskManager.startTask(owner.itemId, task);
 }
 
 void CutTask::run()
 {
-    AbstractTaskDone whenFinished(m_owner.second, this);
+    AbstractTaskDone whenFinished(m_owner.itemId, this);
     if (m_isCanceled || pCore->taskManager.isBlocked()) {
         return;
     }
@@ -196,7 +198,7 @@ void CutTask::run()
     qDebug() << " + + + + + + + + STARTING STAB TASK";
 
     QString url;
-    auto binClip = pCore->projectItemModel()->getClipByBinID(QString::number(m_owner.second));
+    auto binClip = pCore->projectItemModel()->getClipByBinID(QString::number(m_owner.itemId));
     if (binClip) {
         // Filter applied on a timeline or bin clip
         url = binClip->url();

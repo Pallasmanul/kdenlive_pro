@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: BSD-2-Clause
+# SPDX-FileCopyrightText: Nicolas Fella <nicolas.fella@gmx.de>, Jean-Baptiste Mardelle <jb@kdenlive.org>, Julius Künzel <jk.kdedev@smartlab.uber.space>
+
 kcoreaddons_add_plugin(mltpreview INSTALL_NAMESPACE "kf${QT_MAJOR_VERSION}/thumbcreator")
 
 target_sources(mltpreview PRIVATE mltpreview.cpp ../src/lib/localeHandling.cpp)
@@ -10,8 +13,8 @@ target_include_directories(mltpreview PRIVATE
 target_link_libraries(mltpreview
         Qt${QT_MAJOR_VERSION}::Core
         Qt${QT_MAJOR_VERSION}::Gui
-        KF5::KIOCore
-        KF5::KIOGui
+        KF${KF_MAJOR}::KIOCore
+        KF${KF_MAJOR}::KIOGui
         ${MLT_LIBRARIES}
         ${MLTPP_LIBRARIES}
 )

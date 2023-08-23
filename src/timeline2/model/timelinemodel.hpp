@@ -14,6 +14,7 @@
 #include <cassert>
 #include <memory>
 #include <mlt++/MltTractor.h>
+
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -89,11 +90,12 @@ class TimelineModel : public QAbstractItemModel_shared_from_this<TimelineModel>
 protected:
     /** @brief this constructor should not be called. Call the static construct instead
      */
-    TimelineModel(const QUuid &uuid, Mlt::Profile *profile, std::weak_ptr<DocUndoStack> undo_stack);
+    TimelineModel(const QUuid &uuid, std::weak_ptr<DocUndoStack> undo_stack);
 
 public:
     friend class TrackModel;
     friend class TimelineTabs;
+    friend class ProjectManager;
     template <typename T> friend class MoveableItem;
     friend class ClipModel;
     friend class CompositionModel;
@@ -103,6 +105,8 @@ public:
     friend class MarkerListModel;
     friend class TimeRemap;
     friend struct TimelineFunctions;
+
+    Q_PROPERTY(QString visibleSequenceName MEMBER m_visibleSequenceName NOTIFY visibleSequenceNameChanged)
 
     /// Two level model: tracks and clips on track
     enum {
@@ -175,7 +179,7 @@ public:
     /** @brief Returns the current tractor's producer, useful for control seeking, playing, etc
      */
     std::shared_ptr<Mlt::Producer> producer();
-    Mlt::Profile *getProfile();
+    Mlt::Profile &getProfile();
 
     /** @brief returns the number of tracks */
     int getTracksCount() const;
@@ -645,7 +649,7 @@ public:
     static int seekDuration; /// Duration after project end where seeking is allowed
     /** @brief True until the timeline has all tracks and clips loaded
      */
-    bool isLoading;
+    bool isLoading{true};
 
     /** @brief Get all the elements of the same group as the given clip.
        If there is a group hierarchy, only the topmost group is considered.
@@ -800,7 +804,7 @@ public:
     void replugClip(int clipId);
 
     /** @brief Refresh the tractor profile in case a change was requested. */
-    void updateProfile(Mlt::Profile *profile);
+    // void updateProfile(Mlt::Profile profile);
 
     /** @brief Add, remove or refresh the internal added avfilter.fieldorder effect based on the given profile*/
     void updateFieldOrderFilter(std::unique_ptr<ProfileModel> &ptr);
@@ -868,12 +872,18 @@ public:
     /** @brief returns this timeline's guide model */
     std::shared_ptr<MarkerListModel> getGuideModel();
     std::shared_ptr<MarkerSortModel> getFilteredGuideModel();
+    /** @brief The sequence name displayed in master effec button needs an update */
+    void updateVisibleSequenceName(const QString displayName);
+    /** @brief Register all clips in this sequence to Bin */
+    void registerTimeline();
+    /** @brief Load timeline preview on project opening */
+    void loadPreview(const QString &chunks, const QString &dirty, bool enable, Mlt::Playlist &playlist);
 
 protected:
     /** @brief Register a new track. This is a call-back meant to be called from TrackModel
        @param pos indicates the number of the track we are adding. If this is -1, then we add at the end.
      */
-    void registerTrack(std::shared_ptr<TrackModel> track, int pos = -1, bool doInsert = true);
+    void registerTrack(std::shared_ptr<TrackModel> track, int pos = -1, bool doInsert = true, bool singleOperation = true);
 
     /** @brief Register a new clip. This is a call-back meant to be called from ClipModel
      */
@@ -965,7 +975,7 @@ Q_SIGNALS:
     /** @brief signal triggered by track operations */
     void invalidateZone(int in, int out);
     /** @brief signal triggered when a track duration changed (insertion/deletion) */
-    void durationUpdated();
+    void durationUpdated(const QUuid &uuid);
 
     /** @brief Signal sent whenever the selection changes */
     void selectionChanged();
@@ -981,6 +991,10 @@ Q_SIGNALS:
     void saveGuideCategories();
     /** @brief Highlight a subtitle item in timeline */
     void highlightSub(int index);
+    /** @brief The visible sequence name has to be changed */
+    void visibleSequenceNameChanged();
+    /** @brief Connect the preview manager with timelinecontroller */
+    void connectPreviewManager();
 
 protected:
     QUuid m_uuid;
@@ -1001,8 +1015,6 @@ protected:
     // TODO: move this in subtitlemodel.h
     std::map<int, GenTime> m_allSubtitles;
 
-    static int next_id; /// next valid id to assign
-
     std::unique_ptr<GroupsModel> m_groups;
     std::shared_ptr<SnapModel> m_snaps;
     std::shared_ptr<SubtitleModel> m_subtitleModel{nullptr};
@@ -1010,8 +1022,6 @@ protected:
     std::unordered_set<int> m_allGroups; /// ids of all the groups
 
     std::weak_ptr<DocUndoStack> m_undoStack;
-
-    Mlt::Profile *m_profile;
 
     // The black track producer. Its length / out should always be adjusted to the projects's length
     std::unique_ptr<Mlt::Producer> m_blackClip;
@@ -1043,6 +1053,7 @@ protected:
     std::shared_ptr<MarkerListModel> m_guidesModel;
     bool m_softDelete;
     std::shared_ptr<MarkerSortModel> m_guidesFilterModel;
+    QString m_visibleSequenceName;
 
     // what follows are some virtual function that corresponds to the QML. They are implemented in TimelineItemModel
 protected:

@@ -39,8 +39,8 @@ public:
        @param model is the asset this parameter belong to
        @param index is the index of this parameter in its model
      */
-    explicit KeyframeModel(std::weak_ptr<AssetParameterModel> model, const QModelIndex &index, std::weak_ptr<DocUndoStack> undo_stack,
-                           QObject *parent = nullptr);
+    explicit KeyframeModel(std::weak_ptr<AssetParameterModel> model, const QModelIndex &index, std::weak_ptr<DocUndoStack> undo_stack, int in = -1,
+                           int out = -1, QObject *parent = nullptr);
 
     enum { TypeRole = Qt::UserRole + 1, PosRole, FrameRole, ValueRole, NormalizedValueRole, SelectedRole, ActiveRole, MoveOnlyRole };
     friend class KeyframeModelList;
@@ -135,7 +135,7 @@ public:
     Q_INVOKABLE QString realValue(double normalizedValue) const;
 
     /** @brief Read the value from the model and update itself accordingly */
-    void refresh();
+    void refresh(int in = -1, int out = -1);
     /** @brief Reset all values to their default */
     void reset();
 
@@ -160,7 +160,8 @@ public:
     int rowCount(const QModelIndex &parent = QModelIndex()) const override;
     static QList<QPoint> getRanges(const QString &animData, const std::shared_ptr<AssetParameterModel> &model);
     static std::shared_ptr<Mlt::Properties> getAnimation(std::shared_ptr<AssetParameterModel> model, const QString &animData, int duration = 0);
-    static const QString getAnimationStringWithOffset(std::shared_ptr<AssetParameterModel> model, const QString &animData, int offset, int duration);
+    static const QString getAnimationStringWithOffset(std::shared_ptr<AssetParameterModel> model, const QString &animData, int offset, int duration,
+                                                      ParamType paramType, bool useOpacity = true);
 
 protected:
     /** @brief Helper function that generate a lambda to change type / value of given keyframe */
@@ -190,7 +191,7 @@ protected:
     /** @brief this function clears all existing keyframes, and reloads its data from the string passed */
     void resetAnimProperty(const QString &prop);
     /** @brief this function does the opposite of getAnimProperty: given a MLT representation of an animation, build the corresponding model */
-    void parseAnimProperty(const QString &prop);
+    void parseAnimProperty(const QString &prop, int in = -1, int out = -1);
     void parseRotoProperty(const QString &prop);
 
 private:

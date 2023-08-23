@@ -4,8 +4,9 @@
     SPDX-FileCopyrightText: 2017-2019 Nicolas Carion <french.ebook.lover@gmail.com>
     SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
 */
-#include "doc/kdenlivedoc.h"
 #include "test_utils.hpp"
+// test specific headers
+#include "doc/kdenlivedoc.h"
 #include "timeline2/model/timelinefunctions.hpp"
 
 using namespace fakeit;
@@ -17,29 +18,17 @@ TEST_CASE("Simple trimming operations", "[Trimming]")
     std::shared_ptr<DocUndoStack> undoStack = std::make_shared<DocUndoStack>(nullptr);
 
     // Here we do some trickery to enable testing.
-    // We mock the project class so that the undoStack function returns our undoStack
     KdenliveDoc document(undoStack, {1, 3});
-    Mock<KdenliveDoc> docMock(document);
-    KdenliveDoc &mockedDoc = docMock.get();
-
-    // We mock the project class so that the undoStack function returns our undoStack, and our mocked document
-    Mock<ProjectManager> pmMock;
-    When(Method(pmMock, undoStack)).AlwaysReturn(undoStack);
-    When(Method(pmMock, cacheDir)).AlwaysReturn(QDir(QStandardPaths::writableLocation(QStandardPaths::CacheLocation)));
-    When(Method(pmMock, current)).AlwaysReturn(&mockedDoc);
-
-    ProjectManager &mocked = pmMock.get();
-    pCore->m_projectManager = &mocked;
-    mocked.m_project = &mockedDoc;
+    pCore->projectManager()->m_project = &document;
     QDateTime documentDate = QDateTime::currentDateTime();
-    mocked.updateTimeline(0, false, QString(), QString(), documentDate, 0);
-    auto timeline = mockedDoc.getTimeline(mockedDoc.uuid());
-    mocked.m_activeTimelineModel = timeline;
-    mocked.testSetActiveDocument(&mockedDoc, timeline);
+    pCore->projectManager()->updateTimeline(false, QString(), QString(), documentDate, 0);
+    auto timeline = document.getTimeline(document.uuid());
+    pCore->projectManager()->m_activeTimelineModel = timeline;
+    pCore->projectManager()->testSetActiveDocument(&document, timeline);
 
-    QString binId = createProducer(*timeline->getProfile(), "red", binModel);
-    QString binId2 = createProducer(*timeline->getProfile(), "blue", binModel);
-    QString binId3 = createProducerWithSound(*timeline->getProfile(), binModel);
+    QString binId = createProducer(pCore->getProjectProfile(), "red", binModel);
+    QString binId2 = createProducer(pCore->getProjectProfile(), "blue", binModel);
+    QString binId3 = createProducerWithSound(pCore->getProjectProfile(), binModel);
 
     int cid1 = ClipModel::construct(timeline, binId, -1, PlaylistState::VideoOnly);
     int tid1 = timeline->getTrackIndexFromPosition(3);
@@ -454,7 +443,7 @@ TEST_CASE("Simple trimming operations", "[Trimming]")
     }
     SECTION("Cut should preserve AV groups")
     {
-        QString binId3 = createProducerWithSound(*timeline->getProfile(), binModel);
+        QString binId3 = createProducerWithSound(pCore->getProjectProfile(), binModel);
 
         int tid6 = TrackModel::construct(timeline, -1, -1, QString(), true);
         int tid5 = TrackModel::construct(timeline);
@@ -537,8 +526,7 @@ TEST_CASE("Simple trimming operations", "[Trimming]")
         state2();
     }
 
-    binModel->clean();
-    pCore->m_projectManager = nullptr;
+    pCore->projectManager()->closeCurrentDocument(false, false);
 }
 
 TEST_CASE("Spacer operations", "[Spacer]")
@@ -547,29 +535,18 @@ TEST_CASE("Spacer operations", "[Spacer]")
     binModel->clean();
     std::shared_ptr<DocUndoStack> undoStack = std::make_shared<DocUndoStack>(nullptr);
     KdenliveDoc document(undoStack, {0, 1});
-    Mock<KdenliveDoc> docMock(document);
-    KdenliveDoc &mockedDoc = docMock.get();
-
-    // We mock the project class so that the undoStack function returns our undoStack, and our mocked document
-    Mock<ProjectManager> pmMock;
-    When(Method(pmMock, undoStack)).AlwaysReturn(undoStack);
-    When(Method(pmMock, cacheDir)).AlwaysReturn(QDir(QStandardPaths::writableLocation(QStandardPaths::CacheLocation)));
-    When(Method(pmMock, current)).AlwaysReturn(&mockedDoc);
-
-    ProjectManager &mocked = pmMock.get();
-    pCore->m_projectManager = &mocked;
-    mocked.m_project = &mockedDoc;
+    pCore->projectManager()->m_project = &document;
     QDateTime documentDate = QDateTime::currentDateTime();
-    mocked.updateTimeline(0, false, QString(), QString(), documentDate, 0);
-    auto timeline = mockedDoc.getTimeline(mockedDoc.uuid());
-    mocked.m_activeTimelineModel = timeline;
-    mocked.testSetActiveDocument(&mockedDoc, timeline);
+    pCore->projectManager()->updateTimeline(false, QString(), QString(), documentDate, 0);
+    auto timeline = document.getTimeline(document.uuid());
+    pCore->projectManager()->m_activeTimelineModel = timeline;
+    pCore->projectManager()->testSetActiveDocument(&document, timeline);
 
-    std::shared_ptr<MarkerListModel> guideModel = mockedDoc.getGuideModel(mockedDoc.uuid());
+    std::shared_ptr<MarkerListModel> guideModel = document.getGuideModel(document.uuid());
 
-    QString binId = createProducer(*timeline->getProfile(), "red", binModel);
-    QString binId2 = createProducer(*timeline->getProfile(), "blue", binModel);
-    QString binId3 = createProducerWithSound(*timeline->getProfile(), binModel);
+    QString binId = createProducer(pCore->getProjectProfile(), "red", binModel);
+    QString binId2 = createProducer(pCore->getProjectProfile(), "blue", binModel);
+    QString binId3 = createProducerWithSound(pCore->getProjectProfile(), binModel);
 
     int cid1 = ClipModel::construct(timeline, binId, -1, PlaylistState::VideoOnly);
     int tid1 = timeline->getTrackIndexFromPosition(0);
@@ -673,14 +650,14 @@ TEST_CASE("Spacer operations", "[Spacer]")
 
     SECTION("Simple one track space insertion with guides")
     {
-        mocked.m_activeTimelineModel = timeline;
+        pCore->projectManager()->m_activeTimelineModel = timeline;
         REQUIRE(timeline->requestClipMove(cid1, tid1, 0));
         int l = timeline->getClipPlaytime(cid1);
         int p2 = l + 10;
         REQUIRE(timeline->requestClipMove(cid2, tid1, p2));
         int p3 = l + l + 20;
         REQUIRE(timeline->requestClipMove(cid3, tid1, p3));
-        double fps = timeline->getProfile()->fps();
+        double fps = pCore->getProjectProfile().fps();
         guideModel->addMarker(GenTime(l / 2, fps), "guide1");
         guideModel->addMarker(GenTime(l + 2, fps), "guide2");
         guideModel->addMarker(GenTime(l + 7, fps), "guide3");
@@ -834,9 +811,7 @@ TEST_CASE("Spacer operations", "[Spacer]")
         state1();
     }
 
-    binModel->clean();
-    undoStack->clear();
-    pCore->m_projectManager = nullptr;
+    pCore->projectManager()->closeCurrentDocument(false, false);
 }
 
 TEST_CASE("Insert/delete", "[Trimming2]")
@@ -846,28 +821,15 @@ TEST_CASE("Insert/delete", "[Trimming2]")
     std::shared_ptr<DocUndoStack> undoStack = std::make_shared<DocUndoStack>(nullptr);
 
     // Here we do some trickery to enable testing.
-    // We mock the project class so that the undoStack function returns our undoStack
     KdenliveDoc document(undoStack);
-    Mock<KdenliveDoc> docMock(document);
-    KdenliveDoc &mockedDoc = docMock.get();
-
-    // We mock the project class so that the undoStack function returns our undoStack, and our mocked document
-    Mock<ProjectManager> pmMock;
-    When(Method(pmMock, undoStack)).AlwaysReturn(undoStack);
-    When(Method(pmMock, cacheDir)).AlwaysReturn(QDir(QStandardPaths::writableLocation(QStandardPaths::CacheLocation)));
-    When(Method(pmMock, current)).AlwaysReturn(&mockedDoc);
-
-    ProjectManager &mocked = pmMock.get();
-    pCore->m_projectManager = &mocked;
-
-    mocked.m_project = &mockedDoc;
+    pCore->projectManager()->m_project = &document;
     QDateTime documentDate = QDateTime::currentDateTime();
-    mocked.updateTimeline(0, false, QString(), QString(), documentDate, 0);
-    auto timeline = mockedDoc.getTimeline(mockedDoc.uuid());
-    mocked.m_activeTimelineModel = timeline;
-    mocked.testSetActiveDocument(&mockedDoc, timeline);
+    pCore->projectManager()->updateTimeline(false, QString(), QString(), documentDate, 0);
+    auto timeline = document.getTimeline(document.uuid());
+    pCore->projectManager()->m_activeTimelineModel = timeline;
+    pCore->projectManager()->testSetActiveDocument(&document, timeline);
 
-    QString binId = createProducerWithSound(*timeline->getProfile(), binModel);
+    QString binId = createProducerWithSound(pCore->getProjectProfile(), binModel);
     int tid2 = timeline->getTrackIndexFromPosition(1);
     int tid1 = timeline->getTrackIndexFromPosition(2);
 
@@ -997,8 +959,7 @@ TEST_CASE("Insert/delete", "[Trimming2]")
         state2();
     }
 
-    binModel->clean();
-    pCore->m_projectManager = nullptr;
+    pCore->projectManager()->closeCurrentDocument(false, false);
 }
 
 TEST_CASE("Copy/paste", "[CP]")
@@ -1008,27 +969,15 @@ TEST_CASE("Copy/paste", "[CP]")
     std::shared_ptr<DocUndoStack> undoStack = std::make_shared<DocUndoStack>(nullptr);
 
     KdenliveDoc document(undoStack);
-    Mock<KdenliveDoc> docMock(document);
-    KdenliveDoc &mockedDoc = docMock.get();
-
-    // We mock the project class so that the undoStack function returns our undoStack, and our mocked document
-    Mock<ProjectManager> pmMock;
-    When(Method(pmMock, undoStack)).AlwaysReturn(undoStack);
-    When(Method(pmMock, cacheDir)).AlwaysReturn(QDir(QStandardPaths::writableLocation(QStandardPaths::CacheLocation)));
-    When(Method(pmMock, current)).AlwaysReturn(&mockedDoc);
-
-    ProjectManager &mocked = pmMock.get();
-    pCore->m_projectManager = &mocked;
-
-    mocked.m_project = &mockedDoc;
+    pCore->projectManager()->m_project = &document;
     QDateTime documentDate = QDateTime::currentDateTime();
-    mocked.updateTimeline(0, false, QString(), QString(), documentDate, 0);
-    auto timeline = mockedDoc.getTimeline(mockedDoc.uuid());
-    mocked.m_activeTimelineModel = timeline;
-    mocked.testSetActiveDocument(&mockedDoc, timeline);
+    pCore->projectManager()->updateTimeline(false, QString(), QString(), documentDate, 0);
+    auto timeline = document.getTimeline(document.uuid());
+    pCore->projectManager()->m_activeTimelineModel = timeline;
+    pCore->projectManager()->testSetActiveDocument(&document, timeline);
 
-    QString binId = createProducerWithSound(*timeline->getProfile(), binModel);
-    QString binId2 = createProducer(*timeline->getProfile(), "red", binModel);
+    QString binId = createProducerWithSound(pCore->getProjectProfile(), binModel);
+    QString binId2 = createProducer(pCore->getProjectProfile(), "red", binModel);
 
     int tid2b = timeline->getTrackIndexFromPosition(0);
     int tid2 = timeline->getTrackIndexFromPosition(1);
@@ -1364,8 +1313,7 @@ TEST_CASE("Copy/paste", "[CP]")
         cid4 = timeline->m_groups->getSplitPartner(cid3);
         state2(tid2b);
     }
-    binModel->clean();
-    pCore->m_projectManager = nullptr;
+    pCore->projectManager()->closeCurrentDocument(false, false);
 }
 
 TEST_CASE("Advanced trimming operations: Slip", "[TrimmingSlip]")
@@ -1376,27 +1324,15 @@ TEST_CASE("Advanced trimming operations: Slip", "[TrimmingSlip]")
 
     // Here we do some trickery to enable testing.
     KdenliveDoc document(undoStack, {0, 2});
-    Mock<KdenliveDoc> docMock(document);
-    KdenliveDoc &mockedDoc = docMock.get();
-
-    // We mock the project class so that the undoStack function returns our undoStack, and our mocked document
-    Mock<ProjectManager> pmMock;
-    When(Method(pmMock, undoStack)).AlwaysReturn(undoStack);
-    When(Method(pmMock, cacheDir)).AlwaysReturn(QDir(QStandardPaths::writableLocation(QStandardPaths::CacheLocation)));
-    When(Method(pmMock, current)).AlwaysReturn(&mockedDoc);
-
-    ProjectManager &mocked = pmMock.get();
-    pCore->m_projectManager = &mocked;
-
-    mocked.m_project = &mockedDoc;
+    pCore->projectManager()->m_project = &document;
     QDateTime documentDate = QDateTime::currentDateTime();
-    mocked.updateTimeline(0, false, QString(), QString(), documentDate, 0);
-    auto timeline = mockedDoc.getTimeline(mockedDoc.uuid());
-    mocked.m_activeTimelineModel = timeline;
-    mocked.testSetActiveDocument(&mockedDoc, timeline);
+    pCore->projectManager()->updateTimeline(false, QString(), QString(), documentDate, 0);
+    auto timeline = document.getTimeline(document.uuid());
+    pCore->projectManager()->m_activeTimelineModel = timeline;
+    pCore->projectManager()->testSetActiveDocument(&document, timeline);
 
-    QString binId = createProducer(*timeline->getProfile(), "red", binModel);
-    QString binId2 = createProducer(*timeline->getProfile(), "blue", binModel);
+    QString binId = createProducer(pCore->getProjectProfile(), "red", binModel);
+    QString binId2 = createProducer(pCore->getProjectProfile(), "blue", binModel);
 
     int tid1 = timeline->getTrackIndexFromPosition(0);
     int tid2 = timeline->getTrackIndexFromPosition(1);
@@ -1687,8 +1623,7 @@ TEST_CASE("Advanced trimming operations: Slip", "[TrimmingSlip]")
         state3();
     }
 
-    binModel->clean();
-    pCore->m_projectManager = nullptr;
+    pCore->projectManager()->closeCurrentDocument(false, false);
 }
 
 TEST_CASE("Advanced trimming operations: Ripple", "[TrimmingRipple]")
@@ -1699,26 +1634,15 @@ TEST_CASE("Advanced trimming operations: Ripple", "[TrimmingRipple]")
 
     // Here we do some trickery to enable testing.
     KdenliveDoc document(undoStack, {0, 2});
-    Mock<KdenliveDoc> docMock(document);
-    KdenliveDoc &mockedDoc = docMock.get();
-
-    // We mock the project class so that the undoStack function returns our undoStack, and our mocked document
-    Mock<ProjectManager> pmMock;
-    When(Method(pmMock, undoStack)).AlwaysReturn(undoStack);
-    When(Method(pmMock, cacheDir)).AlwaysReturn(QDir(QStandardPaths::writableLocation(QStandardPaths::CacheLocation)));
-    When(Method(pmMock, current)).AlwaysReturn(&mockedDoc);
-
-    ProjectManager &mocked = pmMock.get();
-    pCore->m_projectManager = &mocked;
-    mocked.m_project = &mockedDoc;
+    pCore->projectManager()->m_project = &document;
     QDateTime documentDate = QDateTime::currentDateTime();
-    mocked.updateTimeline(0, false, QString(), QString(), documentDate, 0);
-    auto timeline = mockedDoc.getTimeline(mockedDoc.uuid());
-    mocked.m_activeTimelineModel = timeline;
-    mocked.testSetActiveDocument(&mockedDoc, timeline);
+    pCore->projectManager()->updateTimeline(false, QString(), QString(), documentDate, 0);
+    auto timeline = document.getTimeline(document.uuid());
+    pCore->projectManager()->m_activeTimelineModel = timeline;
+    pCore->projectManager()->testSetActiveDocument(&document, timeline);
 
-    QString binId = createProducer(*timeline->getProfile(), "red", binModel);
-    QString binId2 = createProducer(*timeline->getProfile(), "blue", binModel);
+    QString binId = createProducer(pCore->getProjectProfile(), "red", binModel);
+    QString binId2 = createProducer(pCore->getProjectProfile(), "blue", binModel);
 
     int tid1 = timeline->getTrackIndexFromPosition(0);
     int tid2 = timeline->getTrackIndexFromPosition(1);
@@ -2111,6 +2035,5 @@ TEST_CASE("Advanced trimming operations: Ripple", "[TrimmingRipple]")
         stateC();
     }
 
-    binModel->clean();
-    pCore->m_projectManager = nullptr;
+    pCore->projectManager()->closeCurrentDocument(false, false);
 }

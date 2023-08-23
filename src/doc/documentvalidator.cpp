@@ -1416,7 +1416,6 @@ bool DocumentValidator::upgrade(double version, const double currentVersion)
                         }
                     }
                     Xml::setXmlProperty(eff, conversionParams.at(2), parsedValues.join(QLatin1Char(';')));
-                    // Xml::setXmlProperty(eff, QStringLiteral("kdenlive:sync_in_out"), QStringLiteral("1"));
                     eff.setAttribute(QStringLiteral("out"), out);
                 }
             }
@@ -1961,7 +1960,7 @@ auto DocumentValidator::upgradeTo100(const QLocale &documentLocale) -> QString
         auto fixTimecode = [decimalPoint](QString &value) {
             static const QRegularExpression reTimecode(R"((\d+:\d+:\d+))" + QString(decimalPoint) + "(\\d+)");
             static const QRegularExpression reValue("(=\\d+)" + QString(decimalPoint) + "(\\d+)");
-            value.replace(reTimecode, "\\1.\\2").replace(reValue, "\\1.\\2");
+            value.replace(reTimecode, QString::fromLatin1("\\1.\\2")).replace(reValue, "\\1.\\2");
         };
 
         // List of properties which always need to be fixed

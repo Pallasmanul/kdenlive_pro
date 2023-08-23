@@ -149,7 +149,7 @@ void EffectsRepository::parseCustomAssetFile(const QString &file_name, std::unor
         } else if (type == QLatin1String("custom")) {
             // Old type effect, update to customVideo / customAudio
             const QString effectTag = currentEffect.attribute(QStringLiteral("tag"));
-            QScopedPointer<Mlt::Properties> metadata(getMetadata(effectTag));
+            std::unique_ptr<Mlt::Properties> metadata(getMetadata(effectTag));
             if (metadata && metadata->is_valid()) {
                 Mlt::Properties tags(mlt_properties(metadata->get_data("tags")));
                 if (QString(tags.get(0)) == QLatin1String("Audio")) {
@@ -159,11 +159,7 @@ void EffectsRepository::parseCustomAssetFile(const QString &file_name, std::unor
                     result.type = AssetListType::AssetType::Custom;
                     currentEffect.setAttribute(QStringLiteral("type"), QStringLiteral("customVideo"));
                 }
-                QFile effectFile(file_name);
-                if (effectFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
-                    effectFile.write(doc.toString().toUtf8());
-                }
-                effectFile.close();
+                Xml::docContentToFile(doc, file_name);
             }
         } else if (type == QLatin1String("text")) {
             result.type = AssetListType::AssetType::Text;
@@ -185,7 +181,7 @@ QStringList EffectsRepository::assetDirs() const
     return dirs;
 }
 
-void EffectsRepository::parseType(QScopedPointer<Mlt::Properties> &metadata, Info &res)
+void EffectsRepository::parseType(Mlt::Properties *metadata, Info &res)
 {
     res.type = AssetListType::AssetType::Video;
     Mlt::Properties tags(mlt_properties(metadata->get_data("tags")));
@@ -214,7 +210,7 @@ std::unique_ptr<Mlt::Filter> EffectsRepository::getEffect(const QString &effectI
     Q_ASSERT(exists(effectId));
     QString service_name = m_assets.at(effectId).mltId;
     // We create the Mlt element from its name
-    auto filter = std::make_unique<Mlt::Filter>(*pCore->getProjectProfile(), service_name.toLatin1().constData(), nullptr);
+    auto filter = std::make_unique<Mlt::Filter>(pCore->getProjectProfile(), service_name.toLatin1().constData(), nullptr);
     return filter;
 }
 

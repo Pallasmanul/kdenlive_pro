@@ -4,13 +4,11 @@
     SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
 */
 #include "test_utils.hpp"
-
+// test specific headers
+#include "bin/model/markerlistmodel.hpp"
 #include "core.h"
 #include "doc/kdenlivedoc.h"
 #include "kdenlivesettings.h"
-#define private public
-#define protected public
-#include "bin/model/markerlistmodel.hpp"
 #include "timeline2/model/snapmodel.hpp"
 
 using Marker = std::tuple<GenTime, QString, int>;
@@ -83,7 +81,7 @@ TEST_CASE("Marker model", "[MarkerListModel]")
     pCore->m_projectManager = &mocked;
     mocked.m_project = &mockedDoc;
     QDateTime documentDate = QDateTime::currentDateTime();
-    mocked.updateTimeline(0, false, QString(), QString(), documentDate, 0);
+    mocked.updateTimeline(false, QString(), QString(), documentDate, 0);
     auto timeline = mockedDoc.getTimeline(mockedDoc.uuid());
     mocked.m_activeTimelineModel = timeline;
     mocked.testSetActiveDocument(&mockedDoc, timeline);

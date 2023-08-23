@@ -105,7 +105,7 @@ QStringList TransitionsRepository::assetDirs() const
     return QStandardPaths::locateAll(QStandardPaths::AppDataLocation, QStringLiteral("transitions"), QStandardPaths::LocateDirectory);
 }
 
-void TransitionsRepository::parseType(QScopedPointer<Mlt::Properties> &metadata, Info &res)
+void TransitionsRepository::parseType(Mlt::Properties *metadata, Info &res)
 {
     Mlt::Properties tags(mlt_properties(metadata->get_data("tags")));
     bool audio = QString(tags.get(0)) == QLatin1String("Audio");
@@ -148,7 +148,7 @@ std::unique_ptr<Mlt::Transition> TransitionsRepository::getTransition(const QStr
     Q_ASSERT(exists(transitionId));
     QString service_name = m_assets.at(transitionId).mltId;
     // We create the Mlt element from its name
-    auto transition = std::make_unique<Mlt::Transition>(*pCore->getProjectProfile(), service_name.toUtf8().constData());
+    auto transition = std::make_unique<Mlt::Transition>(pCore->getProjectProfile(), service_name.toUtf8().constData());
     transition->set("kdenlive_id", transitionId.toUtf8().constData());
     return transition;
 }

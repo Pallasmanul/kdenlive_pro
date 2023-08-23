@@ -27,17 +27,18 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QRegularExpression>
-#include <QTextCodec>
 #include <utility>
 #if QT_VERSION >= QT_VERSION_CHECK(6, 0, 0)
 #include <QStringConverter>
+#else
+#include <QTextCodec>
 #endif
 
 SubtitleModel::SubtitleModel(std::shared_ptr<TimelineItemModel> timeline, QObject *parent)
     : QAbstractListModel(parent)
     , m_timeline(timeline)
     , m_lock(QReadWriteLock::Recursive)
-    , m_subtitleFilter(new Mlt::Filter(*pCore->getProjectProfile(), "avfilter.subtitles"))
+    , m_subtitleFilter(new Mlt::Filter(pCore->getProjectProfile(), "avfilter.subtitles"))
 {
     qDebug() << "subtitle constructor";
     qDebug() << "Filter!";

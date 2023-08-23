@@ -225,18 +225,22 @@ public:
     const QString getSequenceId(const QUuid &uuid);
     /** @brief Check if we already have a sequence with this uuid */
     bool hasSequenceId(const QUuid &uuid) const;
+    /** @brief Returns uuid / bin id of all sequence clips in the project */
+    QMap<QUuid, QString> getAllSequenceClips() const;
     /** @brief Return the main project tractor (container of all playlists) */
     std::shared_ptr<Mlt::Tractor> projectTractor();
     const QString sceneList(const QString &root, const QString &fullPath, const QString &filterData, Mlt::Tractor *activeTractor, int duration);
     /** @brief Ensure that sequence @destUuid is not embedded in any dependency of sequence @srcUuid */
     bool canBeEmbeded(const QUuid destUuid, const QUuid srcUuid);
     /** @brief Store a newly created sequence tractor for reuse */
-    void storeSequence(const QString uuid, std::shared_ptr<Mlt::Tractor> tractor);
+    void storeSequence(const QString uuid, std::shared_ptr<Mlt::Tractor> tractor, bool internalSave = true);
     /** @brief Returns the count of sequences in this project */
     int sequenceCount() const;
     /** @brief The id of the folder where new sequences will be created, -1 if none */
     int defaultSequencesFolder() const;
     void setSequencesFolder(int id);
+    /** @brief Remove clip references for a timeline. */
+    void removeReferencedClips(const QUuid &uuid);
 
 protected:
     bool closing;

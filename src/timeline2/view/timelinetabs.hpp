@@ -90,7 +90,7 @@ Q_SIGNALS:
     /** @brief Requests that a given effectstack model is displayed in the asset panel */
     void showItemEffectStack(const QString &clipName, std::shared_ptr<EffectStackModel>, QSize, bool);
     void showSubtitle(int itemId);
-    void updateAssetPosition(int itemId);
+    void updateAssetPosition(int itemId, const QUuid uuid);
     /** @brief Zoom level changed in timeline, update slider
      */
     void updateZoom(int);
@@ -99,8 +99,10 @@ public Q_SLOTS:
     TimelineWidget *addTimeline(const QUuid uuid, const QString &tabName, std::shared_ptr<TimelineItemModel> timelineModel, MonitorProxy *proxy);
     void connectCurrent(int ix);
     void closeTimelineByIndex(int ix);
-    void closeTimeline(const QUuid &uuid);
+    void closeTimelineTab(const QUuid uuid);
     void renameTab(const QUuid &uuid, const QString &name);
+    void slotNextSequence();
+    void slotPreviousSequence();
 
 private:
     TimelineWidget *m_activeTimeline;

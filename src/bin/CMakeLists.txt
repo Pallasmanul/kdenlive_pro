@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: BSD-2-Clause
+# SPDX-FileCopyrightText: Jean-Baptiste Mardelle <jb@kdenlive.org>, Nicolas Carion <french.ebook.lover@gmail.com>
+
 set(kdenlive_SRCS
   ${kdenlive_SRCS}
   bin/abstractprojectitem.cpp
@@ -6,6 +9,7 @@ set(kdenlive_SRCS
   bin/binplaylist.cpp
   bin/clipcreator.cpp
   bin/filewatcher.cpp
+  bin/mediabrowser.cpp
   bin/generators/generators.cpp
   bin/model/markerlistmodel.cpp
   bin/model/markersortmodel.cpp

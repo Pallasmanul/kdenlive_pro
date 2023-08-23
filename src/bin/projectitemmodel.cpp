@@ -41,10 +41,10 @@ SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
 
 ProjectItemModel::ProjectItemModel(QObject *parent)
     : AbstractTreeModel(parent)
+    , closing(false)
     , m_lock(QReadWriteLock::Recursive)
     , m_binPlaylist(nullptr)
     , m_fileWatcher(new FileWatcher())
-    , closing(false)
     , m_nextId(1)
     , m_blankThumb()
     , m_dragType(PlaylistState::Disabled)
@@ -73,9 +73,10 @@ void ProjectItemModel::buildPlaylist(const QUuid uuid)
     m_uuid = uuid;
     m_fileWatcher->clear();
     m_extraPlaylists.clear();
+    Q_ASSERT(m_projectTractor.use_count() <= 1);
     m_projectTractor.reset();
     m_binPlaylist.reset(new BinPlaylist(uuid));
-    m_projectTractor.reset(new Mlt::Tractor(*pCore->getProjectProfile()));
+    m_projectTractor.reset(new Mlt::Tractor(pCore->getProjectProfile()));
     m_projectTractor->set("kdenlive:projectTractor", 1);
     m_binPlaylist->setRetainIn(m_projectTractor.get());
 }
@@ -588,7 +589,6 @@ void ProjectItemModel::clean()
 {
     // QWriteLocker locker(&m_lock);
     closing = true;
-    pCore->taskManager.slotCancelJobs();
     m_extraPlaylists.clear();
     std::vector<std::shared_ptr<AbstractProjectItem>> toDelete;
     toDelete.reserve(size_t(rootItem->childCount()));
@@ -742,7 +742,7 @@ void ProjectItemModel::registerItem(const std::shared_ptr<TreeItem> &item)
         if (clipItem->clipType() == ClipType::Timeline && clipItem->statusReady()) {
             const QString uuid = clipItem->getSequenceUuid().toString();
             std::shared_ptr<Mlt::Tractor> trac(new Mlt::Tractor(clipItem->originalProducer()->parent()));
-            storeSequence(uuid, trac);
+            storeSequence(uuid, trac, false);
         }
     }
 }
@@ -763,6 +763,11 @@ void ProjectItemModel::deregisterItem(int id, TreeItem *item)
 bool ProjectItemModel::hasSequenceId(const QUuid &uuid) const
 {
     return m_binPlaylist->hasSequenceId(uuid);
+}
+
+QMap<QUuid, QString> ProjectItemModel::getAllSequenceClips() const
+{
+    return m_binPlaylist->getAllSequenceClips();
 }
 
 const QString ProjectItemModel::getSequenceId(const QUuid &uuid)
@@ -842,7 +847,7 @@ bool ProjectItemModel::requestAddBinClip(QString &id, const QDomElement &descrip
         ProjectClip::construct(id, description, m_blankThumb, std::static_pointer_cast<ProjectItemModel>(shared_from_this()));
     bool res = addItem(new_clip, parentId, undo, redo);
     if (res) {
-        ClipLoadTask::start({ObjectType::BinClip, id.toInt()}, description, false, -1, -1, this, false, std::bind(readyCallBack, id));
+        ClipLoadTask::start(ObjectId(ObjectType::BinClip, id.toInt(), QUuid()), description, false, -1, -1, this, false, std::bind(readyCallBack, id));
     }
     return res;
 }
@@ -1213,17 +1218,17 @@ QList<QUuid> ProjectItemModel::loadBinPlaylist(Mlt::Service *documentTractor, st
                 }
                 std::shared_ptr<Mlt::Producer> producer;
                 if (prod->parent().property_exists("kdenlive:uuid")) {
-                    const QString uuid = prod->parent().get("kdenlive:uuid");
+                    const QUuid uuid(prod->parent().get("kdenlive:uuid"));
                     if (prod->parent().type() == mlt_service_tractor_type) {
                         // Load sequence properties
                         Mlt::Properties sequenceProps;
                         sequenceProps.pass_values(prod->parent(), "kdenlive:sequenceproperties.");
-                        pCore->currentDoc()->loadSequenceProperties(QUuid(uuid), sequenceProps);
+                        pCore->currentDoc()->loadSequenceProperties(uuid, sequenceProps);
 
                         std::shared_ptr<Mlt::Tractor> trac = std::make_shared<Mlt::Tractor>(prod->parent());
                         int id(prod->parent().get_int("kdenlive:id"));
                         trac->set("kdenlive:id", id);
-                        trac->set("kdenlive:uuid", uuid.toUtf8().constData());
+                        trac->set("kdenlive:uuid", uuid.toString().toUtf8().constData());
                         trac->set("length", prod->parent().get("length"));
                         trac->set("out", prod->parent().get("out"));
                         trac->set("kdenlive:clipname", prod->parent().get("kdenlive:clipname"));
@@ -1235,7 +1240,7 @@ QList<QUuid> ProjectItemModel::loadBinPlaylist(Mlt::Service *documentTractor, st
                         std::shared_ptr<Mlt::Producer> prod2(trac->cut());
 
                         prod2->set("kdenlive:id", id);
-                        prod2->set("kdenlive:uuid", uuid.toUtf8().constData());
+                        prod2->set("kdenlive:uuid", uuid.toString().toUtf8().constData());
                         prod2->set("length", prod->parent().get("length"));
                         prod2->set("out", prod->parent().get("out"));
                         prod2->set("kdenlive:clipname", prod->parent().get("kdenlive:clipname"));
@@ -1251,7 +1256,7 @@ QList<QUuid> ProjectItemModel::loadBinPlaylist(Mlt::Service *documentTractor, st
                         if (resource.endsWith(QLatin1String("<tractor>"))) {
                             // Buggy internal xml producer, drop
                             qDebug() << "/// AARGH INCORRECT SEQUENCE CLIP IN PROJECT BIN... TRY TO RECOVER";
-                            brokenSequences << uuid;
+                            brokenSequences.append(QUuid(uuid));
                             continue;
                         }
                     }
@@ -1393,12 +1398,16 @@ void ProjectItemModel::loadTractorPlaylist(Mlt::Tractor documentTractor, std::un
     }
 }
 
-void ProjectItemModel::storeSequence(const QString uuid, std::shared_ptr<Mlt::Tractor> tractor)
+void ProjectItemModel::storeSequence(const QString uuid, std::shared_ptr<Mlt::Tractor> tractor, bool internalSave)
 {
     if (m_extraPlaylists.count(uuid) > 0) {
         m_extraPlaylists.erase(uuid);
     }
     m_extraPlaylists.insert({uuid, std::move(tractor)});
+    if (internalSave) {
+        // Ensure we never use the mapped ids when re-opening an already opened sequence
+        setExtraTimelineSaved(uuid);
+    }
 }
 
 int ProjectItemModel::sequenceCount() const
@@ -1415,7 +1424,7 @@ const QString ProjectItemModel::sceneList(const QString &root, const QString &fu
 {
     LocaleHandling::resetLocale();
     QString playlist;
-    Mlt::Consumer xmlConsumer(*pCore->getProjectProfile(), "xml", fullPath.isEmpty() ? "kdenlive_playlist" : fullPath.toUtf8().constData());
+    Mlt::Consumer xmlConsumer(pCore->getProjectProfile(), "xml", fullPath.isEmpty() ? "kdenlive_playlist" : fullPath.toUtf8().constData());
     if (!root.isEmpty()) {
         xmlConsumer.set("root", root.toUtf8().constData());
     }
@@ -1437,7 +1446,7 @@ const QString ProjectItemModel::sceneList(const QString &root, const QString &fu
     Mlt::Service s(m_projectTractor->get_service());
     std::unique_ptr<Mlt::Filter> filter = nullptr;
     if (!filterData.isEmpty()) {
-        filter = std::make_unique<Mlt::Filter>(*pCore->getProjectProfile(), QString("dynamictext:%1").arg(filterData).toUtf8().constData());
+        filter = std::make_unique<Mlt::Filter>(pCore->getProjectProfile(), QString("dynamictext:%1").arg(filterData).toUtf8().constData());
         filter->set("fgcolour", "#ffffff");
         filter->set("bgcolour", "#bb333333");
         s.attach(*filter.get());
@@ -1463,6 +1472,16 @@ void ProjectItemModel::setExtraTimelineSaved(const QString &uuid)
 {
     if (m_extraPlaylists.count(uuid) > 0) {
         m_extraPlaylists.at(uuid)->set("_dontmapids", 1);
+    }
+}
+
+void ProjectItemModel::removeReferencedClips(const QUuid &uuid)
+{
+    QList<std::shared_ptr<ProjectClip>> clipList = getRootFolder()->childClips();
+    for (const std::shared_ptr<ProjectClip> &clip : qAsConst(clipList)) {
+        if (clip->refCount() > 0) {
+            clip->purgeReferences(uuid);
+        }
     }
 }
 

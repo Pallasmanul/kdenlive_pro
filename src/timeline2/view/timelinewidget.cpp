@@ -25,7 +25,6 @@
 #include "timelinewidget.h"
 #include "utils/clipboardproxy.hpp"
 
-#include <KDeclarative/KDeclarative>
 #include <QAction>
 #include <QActionGroup>
 #include <QFontDatabase>
@@ -35,9 +34,13 @@
 #include <QQuickItem>
 #include <QSortFilterProxyModel>
 #include <QUuid>
-#include <kdeclarative_version.h>
-#if KDECLARATIVE_VERSION >= QT_VERSION_CHECK(5, 98, 0)
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+#include "kdeclarative_version.h"
+#endif
+#if QT_VERSION > QT_VERSION_CHECK(6, 0, 0) || KDECLARATIVE_VERSION > QT_VERSION_CHECK(5, 98, 0)
 #include <KQuickIconProvider>
+#else
+#include <KDeclarative/KDeclarative>
 #endif
 
 const int TimelineWidget::comboScale[] = {1, 2, 4, 8, 15, 30, 50, 75, 100, 150, 200, 300, 500, 800, 1000, 1500, 2000, 3000, 6000, 15000, 30000};
@@ -46,12 +49,12 @@ TimelineWidget::TimelineWidget(const QUuid uuid, QWidget *parent)
     : QQuickWidget(parent)
     , m_uuid(uuid)
 {
-#if KDECLARATIVE_VERSION < QT_VERSION_CHECK(5, 98, 0)
+#if QT_VERSION > QT_VERSION_CHECK(6, 0, 0) || KDECLARATIVE_VERSION > QT_VERSION_CHECK(5, 98, 0)
+    engine()->addImageProvider(QStringLiteral("icon"), new KQuickIconProvider);
+#else
     KDeclarative::KDeclarative kdeclarative;
     kdeclarative.setDeclarativeEngine(engine());
     kdeclarative.setupEngine(engine());
-#else
-    engine()->addImageProvider(QStringLiteral("icon"), new KQuickIconProvider);
 #endif
     engine()->rootContext()->setContextObject(new KLocalizedContext(this));
     setClearColor(palette().window().color());
@@ -167,6 +170,9 @@ void TimelineWidget::unsetModel()
 {
     rootContext()->setContextProperty("controller", nullptr);
     rootContext()->setContextProperty("multitrack", nullptr);
+    rootContext()->setContextProperty("timeline", nullptr);
+    rootContext()->setContextProperty("guidesModel", nullptr);
+    rootContext()->setContextProperty("subtitleModel", nullptr);
     m_sortModel.reset(new QSortFilterProxyModel(this));
     m_proxy->prepareClose();
 }
@@ -259,9 +265,9 @@ void TimelineWidget::showHeaderMenu()
     bool isAudio = m_proxy->isActiveTrackAudio();
     QList<QAction *> menuActions = m_headerMenu->actions();
     QList<QAction *> audioActions;
+    QStringList allowedActions = {QLatin1String("show_track_record"), QLatin1String("separate_channels"), QLatin1String("normalize_channels")};
     for (QAction *ac : qAsConst(menuActions)) {
-        if (ac->data().toString() == QLatin1String("show_track_record") || ac->data().toString() == QLatin1String("separate_channels") ||
-            ac->data().toString() == QLatin1String("normalize_channels")) {
+        if (allowedActions.contains(ac->data().toString())) {
             audioActions << ac;
         }
     }
@@ -517,29 +523,34 @@ void TimelineWidget::stopAudioRecord()
     }
 }
 
+void TimelineWidget::focusInEvent(QFocusEvent *event)
+{
+    QQuickWidget::focusInEvent(event);
+    QTimer::singleShot(250, rootObject(), SLOT(forceActiveFocus()));
+}
+
 bool TimelineWidget::eventFilter(QObject *object, QEvent *event)
 {
     switch (event->type()) {
     case QEvent::Enter:
         if (!hasFocus()) {
-            Q_EMIT pCore->window()->focusTimeline(true, true);
+            Q_EMIT pCore->window()->showTimelineFocus(true, true);
         }
         break;
     case QEvent::Leave:
         if (!hasFocus()) {
-            Q_EMIT pCore->window()->focusTimeline(false, true);
+            Q_EMIT pCore->window()->showTimelineFocus(false, true);
         }
         break;
     case QEvent::FocusOut:
-        Q_EMIT pCore->window()->focusTimeline(false, false);
+        Q_EMIT pCore->window()->showTimelineFocus(false, false);
         break;
     case QEvent::FocusIn:
-        Q_EMIT pCore->window()->focusTimeline(true, false);
+        Q_EMIT pCore->window()->showTimelineFocus(true, false);
         break;
     default:
         break;
     }
-
     return QQuickWidget::eventFilter(object, event);
 }
 

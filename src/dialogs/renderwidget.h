@@ -10,11 +10,9 @@ SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
 #include <QPushButton>
 #include <QStyledItemDelegate>
 
-#ifdef KF5_USE_PURPOSE
 namespace Purpose {
 class Menu;
 }
-#endif
 
 #include "bin/model/markerlistmodel.hpp"
 #include "definitions.h"
@@ -150,7 +148,7 @@ protected:
 
 public Q_SLOTS:
     void slotAbortCurrentJob();
-    void slotPrepareExport(bool scriptExport = false, const QString &scriptPath = QString());
+    void slotPrepareExport(bool scriptExport = false);
     void adjustViewToProfile();
     void reloadGuides();
     /** @brief Adjust render file name to current project name. */
@@ -182,7 +180,6 @@ private Q_SLOTS:
     void slotRenderModeChanged();
     void slotUpdateRescaleHeight(int);
     void slotUpdateRescaleWidth(int);
-    void slotSwitchAspectRatio();
     void slotCheckStartGuidePosition();
     void slotCheckEndGuidePosition();
     /** @brief Enable / disable the rescale options. */
@@ -217,7 +214,6 @@ private:
     RenderViewDelegate *m_scriptsDelegate;
     RenderViewDelegate *m_jobsDelegate;
     bool m_blockProcessing;
-    QString m_renderer;
     QMap<int, QString> m_errorMessages;
     std::weak_ptr<MarkerListModel> m_guidesModel;
 
@@ -225,9 +221,7 @@ private:
     QString m_currentProfile;
     RenderPresetParams m_params;
 
-#ifdef KF5_USE_PURPOSE
     Purpose::Menu *m_shareMenu;
-#endif
     void parseProfiles(const QString &selectedProfile = QString());
     QUrl filenameWithExtension(QUrl url, const QString &extension);
     /** @brief Check if a job needs to be started. */
@@ -235,11 +229,6 @@ private:
     void startRendering(RenderJobItem *item);
     /** @brief Create a rendering profile from MLT preset. */
     QTreeWidgetItem *loadFromMltPreset(const QString &groupName, const QString &path, QString profileName, bool codecInName = false);
-    void prepareRendering(bool delayedRendering);
-    /** @brief Create a new empty playlist (*.mlt) file and @returns the filename of the created file */
-    QString generatePlaylistFile(bool delayedRendering);
-    void generateRenderFiles(const QString playlistPath, QDomDocument doc, int in, int out, QString outputFile, bool delayedRendering,
-                             const QString &subtitleFile = QString());
     RenderJobItem *createRenderJob(const QString &playlist, const QString &outputFile, const QString &subtitleFile = QString());
 
 Q_SIGNALS:

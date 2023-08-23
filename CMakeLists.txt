@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: BSD-2-Clause
+# SPDX-FileCopyrightText: Julius Künzel <jk.kdedev@smartlab.uber.space>, Jean-Baptiste Mardelle <jb@kdenlive.org>, Alberto Villa <avilla@FreeBSD.org>, Albert Astals Cid <aacid@kde.org>, Vincent Pinon <vpinon@kde.org>, Laurent Montel <montel@kde.org>, Vincent Pinon <vincent.pinon@asygn.com>, Nicolas Carion <french.ebook.lover@gmail.com>
+
 cmake_minimum_required(VERSION 3.16)
 
 # An odd patch version number means development version, while an even one means
@@ -5,8 +8,8 @@ cmake_minimum_required(VERSION 3.16)
 
 # KDE Application Version, managed by release script
 set (RELEASE_SERVICE_VERSION_MAJOR "23")
-set (RELEASE_SERVICE_VERSION_MINOR "04")
-set (RELEASE_SERVICE_VERSION_MICRO "1")
+set (RELEASE_SERVICE_VERSION_MINOR "11")
+set (RELEASE_SERVICE_VERSION_MICRO "70")
 
 set(KDENLIVE_VERSION "${RELEASE_SERVICE_VERSION_MAJOR}.${RELEASE_SERVICE_VERSION_MINOR}.${RELEASE_SERVICE_VERSION_MICRO}")
 
@@ -40,8 +43,10 @@ set(MLT_MIN_MINOR_VERSION 14)
 set(MLT_MIN_PATCH_VERSION 0)
 set(MLT_MIN_VERSION ${MLT_MIN_MAJOR_VERSION}.${MLT_MIN_MINOR_VERSION}.${MLT_MIN_PATCH_VERSION})
 
-# KDE Frameworks
+# Qt version
+set(QT_MIN_VERSION 5.15.2)
 set(KF_DEP_VERSION "5.92.0")
+
 find_package(ECM ${KF_DEP_VERSION} REQUIRED CONFIG)
 set(CMAKE_MODULE_PATH ${ECM_MODULE_PATH} ${CMAKE_SOURCE_DIR}/cmake/modules)
 
@@ -60,8 +65,25 @@ include(QtVersionOption)
 include(ECMDeprecationSettings)
 remove_definitions(-DQT_NO_CAST_FROM_ASCII) # Defined in KDECompilerSettings, but we don't want that yet
 
+if (NOT DEFINED QT_MAJOR_VERSION)
+    set(QT_MAJOR_VERSION 5)
+endif()
+
+if (QT_MAJOR_VERSION STREQUAL "6")
+    set(USE_VERSIONLESS_TARGETS ON)
+endif()
+
+# KDE Frameworks
+if (NOT DEFINED KF_MAJOR)
+  set(KF_MAJOR ${QT_MAJOR_VERSION})
+endif()
+
+if (KF_MAJOR STREQUAL "6")
+  set(KF_DEP_VERSION "5.240.0")
+endif()
+
 add_definitions(-DTRANSLATION_DOMAIN=\"kdenlive\")
-find_package(KF5 ${KF_DEP_VERSION}
+find_package(KF${KF_MAJOR} ${KF_DEP_VERSION}
     REQUIRED COMPONENTS
     Archive
     Bookmarks
@@ -78,24 +100,20 @@ find_package(KF5 ${KF_DEP_VERSION}
     GuiAddons
     TextWidgets
     IconThemes
-    Declarative
     Solid
     FileMetaData
+    Purpose
 
     OPTIONAL_COMPONENTS
     DocTools
     Crash
-    Purpose
 )
 
-# Qt
-set(QT_MIN_VERSION 5.15.2)
-if (NOT DEFINED QT_MAJOR_VERSION)
-    set(QT_MAJOR_VERSION 5)
-endif()
-
-if (QT_MAJOR_VERSION STREQUAL "6")
-    set(USE_VERSIONLESS_TARGETS ON)
+if (KF_MAJOR LESS "6")
+  find_package(KF${KF_MAJOR} ${KF_DEP_VERSION}
+      REQUIRED COMPONENTS
+      Declarative
+  )
 endif()
 
 ecm_set_disabled_deprecation_versions(
@@ -103,6 +121,7 @@ ecm_set_disabled_deprecation_versions(
     KF ${KF_DEP_VERSION}
 )
 
+# Qt targets
 find_package(Qt${QT_MAJOR_VERSION}
     REQUIRED COMPONENTS
     Core Widgets
@@ -118,7 +137,7 @@ if (QT_MAJOR_VERSION STREQUAL "6")
     find_package(Qt${QT_MAJOR_VERSION} ${QT_MIN_VERSION} REQUIRED NO_MODULE COMPONENTS SvgWidgets)
 endif()
 if(NOT NODBUS)
-    find_package(KF5 ${KF_DEP_VERSION} REQUIRED COMPONENTS DBusAddons)
+    find_package(KF${KF_MAJOR} ${KF_DEP_VERSION} REQUIRED COMPONENTS DBusAddons)
     find_package(Qt${QT_MAJOR_VERSION} REQUIRED COMPONENTS DBus)
 endif()
 add_definitions(-DQT_NO_CAST_TO_ASCII -DQT_NO_URL_CAST_FROM_STRING)
@@ -149,14 +168,7 @@ else()
     set(DATA_INSTALL_PREFIX "/kdenlive")
 endif()
 
-if(KF5Purpose_FOUND)
-  message(STATUS "Found KF5 Purpose, filesharing enabled")
-  set(KF5_PURPOSE TRUE)
-else()
-  message(STATUS "KF5 Purpose not found, filesharing disabled")
-endif()
-
-if(KF5DocTools_FOUND)
+if(KF${KF_MAJOR}DocTools_FOUND)
     add_subdirectory(doc)
     kdoctools_install(po)
 endif()
@@ -198,7 +210,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE TRUE)
 # Sources
 add_subdirectory(src)
 add_subdirectory(renderer)
-if(KF5GuiAddons_VERSION VERSION_LESS "5.100")
+if(KF${KF_MAJOR}GuiAddons_VERSION VERSION_LESS "5.100")
   add_subdirectory(thumbnailer-deprecated)
 else()
   add_subdirectory(thumbnailer)

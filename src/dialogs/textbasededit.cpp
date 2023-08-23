@@ -568,11 +568,10 @@ TextBasedEdit::TextBasedEdit(QWidget *parent)
     setupUi(this);
     setFocusPolicy(Qt::StrongFocus);
     connect(pCore.get(), &Core::speechEngineChanged, this, &TextBasedEdit::updateEngine);
-    updateEngine();
 
     // Settings menu
     QMenu *menu = new QMenu(this);
-    m_translateAction = new QAction(i18n("Translate to english"), this);
+    m_translateAction = new QAction(i18n("Translate to English"), this);
     m_translateAction->setCheckable(true);
     menu->addAction(m_translateAction);
     QAction *configAction = new QAction(i18n("Configure Speech Recognition"), this);
@@ -652,6 +651,7 @@ TextBasedEdit::TextBasedEdit(QWidget *parent)
         }
     });
     info_message->hide();
+    updateEngine();
 
     m_logAction = new QAction(i18n("Show log"), this);
     connect(m_logAction, &QAction::triggered, this, [this]() { KMessageBox::error(this, m_errorString, i18n("Detailed log")); });
@@ -829,7 +829,12 @@ void TextBasedEdit::startRecognition()
             return;
         }
         modelName = language_box->currentData().toString();
-        language = speech_language->isEnabled() ? speech_language->currentData().toString() : QString();
+        language = speech_language->isEnabled() && !speech_language->currentData().isNull()
+                       ? QStringLiteral("language=%1").arg(speech_language->currentData().toString())
+                       : QString();
+        if (KdenliveSettings::whisperDisableFP16()) {
+            language.append(QStringLiteral(" fp16=False"));
+        }
     } else {
         // VOSK engine
         if (!m_stt->checkSetup() || !m_stt->missingDependencies({QStringLiteral("vosk")}).isEmpty()) {
@@ -930,7 +935,7 @@ void TextBasedEdit::startRecognition()
                                 m_playlistWav.remove();
                                 slotProcessSpeechStatus(code, status);
                             });
-                    qDebug() << "::: STARTING SPEECH: " << modelDirectory << " / " << modelName;
+                    qDebug() << "::: STARTING SPEECH: " << modelDirectory << " / " << modelName << " / " << language;
                     if (KdenliveSettings::speechEngine() == QLatin1String("whisper")) {
                         // Whisper
                         connect(m_speechJob.get(), &QProcess::readyReadStandardOutput, this, &TextBasedEdit::slotProcessWhisperSpeech);
@@ -964,7 +969,7 @@ void TextBasedEdit::startRecognition()
             int percent = saveData.section(QLatin1Char(' '), 0, 0).toInt();
             speech_progress->setValue(percent);
         });
-        m_tCodeJob->start(KdenliveSettings::rendererpath(),
+        m_tCodeJob->start(KdenliveSettings::meltpath(),
                           {QStringLiteral("-progress"), m_sourceUrl, QStringLiteral("-consumer"), QString("avformat:%1").arg(m_playlistWav.fileName()),
                            QStringLiteral("vn=1"), QStringLiteral("ar=16000")});
         speech_progress->setValue(0);
@@ -981,7 +986,7 @@ void TextBasedEdit::startRecognition()
             qDebug() << "=== STARTING Whisper reco: " << m_stt->speechScript() << " / " << language_box->currentData() << " / "
                      << KdenliveSettings::whisperDevice() << " / "
                      << (KdenliveSettings::whisperTranslate() ? QStringLiteral("translate") : QStringLiteral("transcribe")) << " / " << m_sourceUrl
-                     << ", START: " << m_clipOffset << ", DUR: " << endPos;
+                     << ", START: " << m_clipOffset << ", DUR: " << endPos << " / " << language;
             connect(m_speechJob.get(), &QProcess::readyReadStandardOutput, this, &TextBasedEdit::slotProcessWhisperSpeech);
             if (speech_zone->isChecked()) {
                 m_tmpCutWav.setFileTemplate(QDir::temp().absoluteFilePath(QStringLiteral("kdenlive-XXXXXX.wav")));

@@ -19,7 +19,8 @@
 #include <mlt++/Mlt.h>
 #include <utility>
 
-KeyframeModel::KeyframeModel(std::weak_ptr<AssetParameterModel> model, const QModelIndex &index, std::weak_ptr<DocUndoStack> undo_stack, QObject *parent)
+KeyframeModel::KeyframeModel(std::weak_ptr<AssetParameterModel> model, const QModelIndex &index, std::weak_ptr<DocUndoStack> undo_stack, int in, int out,
+                             QObject *parent)
     : QAbstractListModel(parent)
     , m_model(std::move(model))
     , m_undoStack(std::move(undo_stack))
@@ -32,7 +33,7 @@ KeyframeModel::KeyframeModel(std::weak_ptr<AssetParameterModel> model, const QMo
         m_paramType = ptr->data(m_index, AssetParameterModel::TypeRole).value<ParamType>();
     }
     setup();
-    refresh();
+    refresh(in, out);
 }
 
 void KeyframeModel::setup()
@@ -154,11 +155,10 @@ bool KeyframeModel::removeKeyframe(GenTime pos, Fun &undo, Fun &redo, bool notif
     }
     Fun redo_first = deleteKeyframe_lambda(pos, notify);
     if (redo_first()) {
-        Fun local_undo = addKeyframe_lambda(pos, oldType, oldValue, true);
-        Fun local_redo = deleteKeyframe_lambda(pos, true);
+        Fun local_undo = addKeyframe_lambda(pos, oldType, oldValue, notify);
         select_redo();
         qDebug() << "after" << getAnimProperty();
-        UPDATE_UNDO_REDO(local_redo, local_undo, undo, redo);
+        UPDATE_UNDO_REDO(redo_first, local_undo, undo, redo);
         UPDATE_UNDO_REDO(select_redo, select_undo, undo, redo);
         return true;
     }
@@ -893,19 +893,19 @@ QString KeyframeModel::getRotoProperty() const
     return doc.toJson();
 }
 
-void KeyframeModel::parseAnimProperty(const QString &prop)
+void KeyframeModel::parseAnimProperty(const QString &prop, int in, int out)
 {
     Fun undo = []() { return true; };
     Fun redo = []() { return true; };
     disconnect(this, &KeyframeModel::modelChanged, this, &KeyframeModel::sendModification);
     removeAllKeyframes(undo, redo);
-    int in = 0;
-    int out = 0;
     bool useOpacity = true;
     Mlt::Properties mlt_prop;
     if (auto ptr = m_model.lock()) {
-        in = ptr->data(m_index, AssetParameterModel::ParentInRole).toInt();
-        out = ptr->data(m_index, AssetParameterModel::ParentDurationRole).toInt();
+        if (out <= in) {
+            in = ptr->data(m_index, AssetParameterModel::ParentInRole).toInt();
+            out = ptr->data(m_index, AssetParameterModel::ParentDurationRole).toInt();
+        }
         ptr->passProperties(mlt_prop);
         useOpacity = ptr->data(m_index, AssetParameterModel::OpacityRole).toBool();
     } else {
@@ -1231,7 +1231,7 @@ QString KeyframeModel::realValue(double normalizedValue) const
     return QString::number(value);
 }
 
-void KeyframeModel::refresh()
+void KeyframeModel::refresh(int in, int out)
 {
     Q_ASSERT(m_index.isValid());
     QString animData;
@@ -1249,7 +1249,7 @@ void KeyframeModel::refresh()
     if (m_paramType == ParamType::Roto_spline) {
         parseRotoProperty(animData);
     } else if (AssetParameterModel::isAnimated(m_paramType)) {
-        parseAnimProperty(animData);
+        parseAnimProperty(animData, in, out);
     } else {
         // first, try to convert to double
         bool ok = false;
@@ -1353,7 +1353,8 @@ std::shared_ptr<Mlt::Properties> KeyframeModel::getAnimation(std::shared_ptr<Ass
     return mlt_prop;
 }
 
-const QString KeyframeModel::getAnimationStringWithOffset(std::shared_ptr<AssetParameterModel> model, const QString &animData, int offset, int duration)
+const QString KeyframeModel::getAnimationStringWithOffset(std::shared_ptr<AssetParameterModel> model, const QString &animData, int offset, int duration,
+                                                          ParamType paramType, bool useOpacity)
 {
     Mlt::Properties mlt_prop;
     model->passProperties(mlt_prop);
@@ -1366,11 +1367,45 @@ const QString KeyframeModel::getAnimationStringWithOffset(std::shared_ptr<AssetP
             int pos = anim.key_get_frame(i) + offset;
             anim.key_set_frame(i, pos);
         }
-    } else {
+    } else if (offset < 0) {
         for (int i = 0; i < anim.key_count(); ++i) {
             int pos = anim.key_get_frame(i) + offset;
             if (pos >= 0) {
                 anim.key_set_frame(i, pos);
+            }
+        }
+    }
+    // If last key is beyond duration, add new keyframe at end
+    int lastPos = anim.key_get_frame(anim.key_count() - 1);
+    if (lastPos > duration) {
+        QVariant value;
+        switch (paramType) {
+        case ParamType::AnimatedRect: {
+            mlt_rect rect = mlt_prop.anim_get_rect("key", duration);
+            QString res = QStringLiteral("%1 %2 %3 %4").arg(int(rect.x)).arg(int(rect.y)).arg(int(rect.w)).arg(int(rect.h));
+            if (useOpacity) {
+                res.append(QStringLiteral(" %1").arg(QString::number(rect.o, 'f')));
+            }
+            value = QVariant(res);
+            break;
+        }
+        case ParamType::Color: {
+            mlt_color mltColor = mlt_prop.anim_get_color("key", duration);
+            QColor color(mltColor.r, mltColor.g, mltColor.b, mltColor.a);
+            value = QVariant(QColorUtils::colorToString(color, true));
+            break;
+        }
+        default:
+            value = QVariant(mlt_prop.anim_get_double("key", duration));
+            break;
+        }
+        mlt_prop.anim_set("key", value.toString().toUtf8().constData(), duration);
+        // Ensure the added keyframe uses the same type as last one
+        mlt_keyframe_type lastType = anim.key_get_type(anim.key_count() - 1);
+        for (int i = 0; i < anim.key_count(); i++) {
+            if (anim.key_get_frame(i) == duration) {
+                anim.key_set_type(i, lastType);
+                break;
             }
         }
     }
@@ -1392,15 +1427,13 @@ bool KeyframeModel::removeNextKeyframes(GenTime pos, Fun &undo, Fun &redo)
     std::vector<GenTime> all_pos;
     Fun local_undo = []() { return true; };
     Fun local_redo = []() { return true; };
-    int firstPos = 0;
     for (const auto &m : m_keyframeList) {
-        if (m.first <= pos) {
-            firstPos++;
-            continue;
+        if (m.first >= pos && m.first != m_keyframeList.begin()->first) {
+            all_pos.push_back(m.first);
         }
-        all_pos.push_back(m.first);
     }
-    int kfrCount = int(all_pos.size());
+    std::sort(all_pos.begin(), all_pos.end());
+    int kfrCount = int(m_keyframeList.size());
     // Remove deleted keyframes from selection
     if (auto ptr = m_model.lock()) {
         QVector<int> selection;
@@ -1412,16 +1445,17 @@ bool KeyframeModel::removeNextKeyframes(GenTime pos, Fun &undo, Fun &redo)
         ptr->m_selectedKeyframes = selection;
     }
     // we trigger only one global remove/insertrow event
-    Fun update_redo_start = [this, firstPos, kfrCount]() {
-        beginRemoveRows(QModelIndex(), firstPos, kfrCount);
+    int row = static_cast<int>(std::distance(m_keyframeList.begin(), m_keyframeList.find(all_pos.front())));
+    Fun update_redo_start = [this, row, kfrCount]() {
+        beginRemoveRows(QModelIndex(), row, kfrCount - 1);
         return true;
     };
     Fun update_redo_end = [this]() {
         endRemoveRows();
         return true;
     };
-    Fun update_undo_start = [this, firstPos, kfrCount]() {
-        beginInsertRows(QModelIndex(), firstPos, kfrCount);
+    Fun update_undo_start = [this, row, kfrCount]() {
+        beginInsertRows(QModelIndex(), row, kfrCount - 1);
         return true;
     };
     Fun update_undo_end = [this]() {

@@ -11,6 +11,7 @@
 #include <QSharedPointer>
 #include <memory>
 #include <mlt++/MltPlaylist.h>
+#include <mlt++/MltProfile.h>
 #include <mlt++/MltTractor.h>
 #include <unordered_map>
 #include <unordered_set>
@@ -64,7 +65,8 @@ public:
        @param id Requested id of the track. Automatic if id = -1
        @param pos is the optional position of the track. If left to -1, it will be added at the end
      */
-    static int construct(const std::weak_ptr<TimelineModel> &parent, int id = -1, int pos = -1, const QString &trackName = QString(), bool audioTrack = false);
+    static int construct(const std::weak_ptr<TimelineModel> &parent, int id = -1, int pos = -1, const QString &trackName = QString(), bool audioTrack = false,
+                         bool singleOperation = true);
 
     /** @brief returns the number of clips */
     int getClipsCount();
@@ -92,7 +94,7 @@ public:
     /** @brief Returns true if track is an audio track
      */
     bool isAudioTrack() const;
-    std::shared_ptr<Mlt::Tractor> getTrackService();
+    Mlt::Tractor *getTrackService();
     /** @brief Returns the track type (audio / video)
      */
     PlaylistState::ClipState trackType() const;
@@ -117,13 +119,15 @@ public:
     bool deleteMix(int clipId, bool final, bool notify = true);
     /** @brief Create a mix composition using clip ids */
     bool createMix(std::pair<int, int> clipIds, std::pair<int, int> mixData);
-    bool createMix(MixInfo info, std::pair<QString, QVector<QPair<QString, QVariant>>> params, bool finalMove);
+    bool createMix(MixInfo info, std::pair<QString, QVector<QPair<QString, QVariant>>> params, std::pair<int, int> tracks, bool finalMove);
     /** @brief Create a mix composition using mix info */
     bool createMix(MixInfo info, bool isAudio);
     /** @brief Change id of first clip in a mix (in case of clip cut) */
     bool reAssignEndMix(int currentId, int newId);
     /** @brief Get all necessary infos to clone a mix */
     std::pair<QString, QVector<QPair<QString, QVariant>>> getMixParams(int cid);
+    /** @brief Get the mix tracks */
+    std::pair<int, int> getMixTracks(int cid) const;
     void switchMix(int cid, const QString &composition, Fun &undo, Fun &redo);
     /** @brief Ensure we don't have unsynced mixes in the playlist (mixes without owner clip) */
     void syncronizeMixes(bool finalMove);
@@ -350,7 +354,6 @@ private:
 
     // We fake two playlists to allow same track transitions.
     std::shared_ptr<Mlt::Tractor> m_track;
-    std::shared_ptr<Mlt::Producer> m_mainPlaylist;
     Mlt::Playlist m_playlists[2];
     /// A list of clips having a same track transition, in the form: {first_clip_id, second_clip_id} where first_clip is placed before second_clip
     QMap<int, int> m_mixList;

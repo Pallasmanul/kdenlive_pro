@@ -74,6 +74,7 @@ class TimelineController : public QObject
     Q_PROPERTY(bool subtitlesDisabled READ subtitlesDisabled NOTIFY subtitlesDisabledChanged)
     Q_PROPERTY(bool subtitlesLocked READ subtitlesLocked NOTIFY subtitlesLockedChanged)
     Q_PROPERTY(bool guidesLocked READ guidesLocked NOTIFY guidesLockedChanged)
+    Q_PROPERTY(bool autotrackHeight MEMBER m_autotrackHeight NOTIFY autotrackHeightChanged)
     Q_PROPERTY(QPoint effectZone MEMBER m_effectZone NOTIFY effectZoneChanged)
     Q_PROPERTY(int trimmingMainClip READ trimmingMainClip NOTIFY trimmingMainClipChanged)
     Q_PROPERTY(int multicamIn MEMBER multicamIn NOTIFY multicamInChanged)
@@ -197,6 +198,8 @@ public:
     void setZoneIn(int inPoint);
     void setZoneOut(int outPoint);
     void setZone(const QPoint &zone, bool withUndo = true);
+    /** @brief Adjust timeline zone to current selection */
+    void setZoneToSelection();
     /** @brief Request a seek operation
        @param position is the desired new timeline position
      */
@@ -236,7 +239,7 @@ public:
     Q_INVOKABLE int insertComposition(int tid, int position, const QString &transitionId, bool logUndo);
     /** @brief Request inserting a new mix in timeline (dragged from compositions list)
        @param tid is the destination track
-       @param position is the timeline position
+       @param position is the timeline position (clip start of the second clip)
        @param transitionId is the data describing the dropped composition
     */
     Q_INVOKABLE void insertNewMix(int tid, int position, const QString &transitionId);
@@ -706,6 +709,8 @@ public Q_SLOTS:
     void updateTrimmingMode();
     /** @brief When a clip or composition is moved, inform asset panel to update cursor position in keyframe views. */
     void checkClipPosition(const QModelIndex &topLeft, const QModelIndex &, const QVector<int> &roles);
+    /** @brief Adjust all tracks height to fit in view. */
+    Q_INVOKABLE void autofitTrackHeight(int timelineHeight, int collapsedHeight);
 
 private Q_SLOTS:
     void updateClipActions();
@@ -715,6 +720,7 @@ private Q_SLOTS:
     void updateMultiTrack();
     /** @brief An operation was attempted on a locked track, animate lock icon to make user aware */
     void slotFlashLock(int trackId);
+    void initializePreview();
 
 public:
     /** @brief a list of actions that have to be enabled/disabled depending on the timeline selection */
@@ -754,12 +760,14 @@ private:
     QMetaObject::Connection m_connection;
     QMetaObject::Connection m_deleteConnection;
     QPoint m_effectZone;
+    bool m_autotrackHeight;
     QVariantList m_masterEffectZones;
     /** @brief The clip that is displayed in the preview monitor during a trimming operation*/
     int m_trimmingMainClip;
 
-    void initializePreview();
     int getMenuOrTimelinePos() const;
+    /** @brief Prepare the preview manager */
+    void connectPreviewManager();
 
 Q_SIGNALS:
     void selected(Mlt::Producer *producer);
@@ -788,6 +796,7 @@ Q_SIGNALS:
     void scrubChanged();
     void subtitlesWarningChanged();
     void multicamInChanged();
+    void autotrackHeightChanged();
     void seeked(int position);
     void zoneChanged();
     void zoneMoved(const QPoint &zone);
@@ -821,6 +830,6 @@ Q_SIGNALS:
     void masterZonesChanged();
     Q_INVOKABLE void ungrabHack();
     void regainFocus();
-    void updateAssetPosition(int itemId);
+    void updateAssetPosition(int itemId, const QUuid uuid);
     void stopAudioRecord();
 };

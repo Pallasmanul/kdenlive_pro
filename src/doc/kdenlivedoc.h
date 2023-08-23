@@ -12,6 +12,7 @@ SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
 
 #pragma once
 
+#include <KJob>
 #include <QAction>
 #include <QDir>
 #include <QList>
@@ -85,22 +86,25 @@ class KdenliveDoc : public QObject
 {
     Q_OBJECT
 public:
+    friend class LoadJob;
+    friend class TimelineModel;
     /** @brief Create a new empty Kdenlive project with the specified profile and requested number of tracks.
      *
      * @param tracks The number of <video, audio> tracks to create in the project.
     */
     KdenliveDoc(QString projectFolder, QUndoGroup *undoGroup, const QString &profileName, const QMap<QString, QString> &properties,
-                const QMap<QString, QString> &metadata, const QPair<int, int> &tracks, int audioChannels, MainWindow *parent = nullptr);
+                const QMap<QString, QString> &metadata, const std::pair<int, int> &tracks, int audioChannels, MainWindow *parent = nullptr);
     /** @brief Open an existing Kdenlive project, returning nothing if the project cannot be opened. */
     static DocOpenResult Open(const QUrl &url, const QString &projectFolder, QUndoGroup *undoGroup,
                 bool recoverCorruption, MainWindow *parent = nullptr);
     /** @brief Create a dummy project, used for testing. */
     KdenliveDoc(std::shared_ptr<DocUndoStack> undoStack, std::pair<int, int> tracks = {2, 2}, MainWindow *parent = nullptr);
     ~KdenliveDoc() override;
-    friend class LoadJob;
     QUuid activeUuid;
+    /** @brief True until all project timelines are loaded. */
+    bool loading{true};
     /** @brief True if we are currently closing the project. */
-    bool closing;
+    bool closing{false};
     /** @brief Get current document's producer. */
     const QByteArray getAndClearProjectXml();
     double fps() const;
@@ -133,9 +137,6 @@ public:
      * will be created the next time the document is saved.
      */
     void requestBackup();
-    /** @brief prepare timelinemodels for closing
-     */
-    void prepareClose();
 
     /** @brief Returns the project folder, used to store project temporary files. */
     QString projectTempFolder() const;
@@ -147,7 +148,7 @@ public:
     /** @brief Returns the project file xml. */
     QDomDocument xmlSceneList(const QString &scene);
     /** @brief Saves the project file xml to a file. */
-    bool saveSceneList(const QString &path, const QString &scene);
+    bool saveSceneList(const QString &path, const QString &scene, bool saveOverExistingFile = true);
     void cacheImage(const QString &fileId, const QImage &img) const;
     void setProjectFolder(const QUrl &url);
     void setZone(const QUuid &uuid, int start, int end);
@@ -166,7 +167,7 @@ public:
     void setSequenceProperty(const QUuid &uuid, const QString &name, const QString &value);
     void setSequenceProperty(const QUuid &uuid, const QString &name, int value);
     /** @brief Get a timeline sequence property. */
-    const QString getSequenceProperty(const QUuid &uuid, const QString &name, const QString &defaultValue = QString()) const;
+    const QString getSequenceProperty(const QUuid &uuid, const QString &name, const QString defaultValue = QString()) const;
     /** @brief Returns true if a sequence property exists. */
     bool hasSequenceProperty(const QUuid &uuid, const QString &name) const;
     /** @brief Delete the sequence property after it has been used. */
@@ -186,7 +187,7 @@ public:
     /** @brief Set the document metadata (author, copyright, ...) */
     void setMetadata(const QMap<QString, QString> &meta);
     /** @brief Get all document properties that need to be saved */
-    QMap<QString, QString> documentProperties();
+    QMap<QString, QString> documentProperties(bool saveHash = false);
     bool useProxy() const;
     bool useExternalProxy() const;
     /** @brief Returns true if a proxy clip should be automatically generated for this width.
@@ -211,14 +212,14 @@ public:
     /** @brief Select most appropriate rendering profile for timeline preview based on fps / size. */
     void selectPreviewProfile();
     void displayMessage(const QString &text, MessageType type = DefaultMessage, int timeOut = 0);
-    /** @brief Get a cache directory for this project. */
-    const QDir getCacheDir(CacheType type, bool *ok, const QUuid uuid = QUuid()) const;
+    /** @brief Get a cache directory for this project. virtual to allow mocking */
+    virtual const QDir getCacheDir(CacheType type, bool *ok, const QUuid uuid = QUuid()) const;
     /** @brief Create standard cache dirs for the project */
     void initCacheDirs();
     /** @brief Get a list of all proxy hash used in this project */
     QStringList getProxyHashList();
     /** @brief Move project data files to new url */
-    const QList<QUrl> getProjectData(const QString &dest, bool *ok);
+    const QList<QUrl> getProjectData(bool *ok);
 
     /** @brief Returns a pointer to the guide model of timeline uuid */
     std::shared_ptr<MarkerListModel> getGuideModel(const QUuid uuid) const;
@@ -265,25 +266,25 @@ public:
     QDomDocument createEmptyDocument(int videotracks, int audiotracks, bool disableProfile = true);
     /** @brief Return the document version. */
     double getDocumentVersion() const;
-    /** @brief Replace proxy clips with originals for rendering. */
-    void useOriginals(QDomDocument &doc);
-    void processProxyNodes(QDomNodeList producers, const QString &root, const QMap<QString, QString> &proxies);
     /** @brief Returns true if this project has subtitles. */
     bool hasSubtitles() const;
     /** @brief Generate a temporary subtitle file for a zone. */
     void generateRenderSubtitleFile(const QUuid &uuid, int in, int out, const QString &subtitleFile);
     /** @brief Returns the default definition  for guide categories.*/
     static const QStringList getDefaultGuideCategories();
-    void addTimeline(const QUuid &uuid, std::shared_ptr<TimelineItemModel> model);
+    void addTimeline(const QUuid &uuid, std::shared_ptr<TimelineItemModel> model, bool force = false);
     /** @brief Load the guides into the model for a sequence.*/
     void loadSequenceGroupsAndGuides(const QUuid &uuid);
     /** @brief Get a timeline by its uuid.*/
     std::shared_ptr<TimelineItemModel> getTimeline(const QUuid &uuid);
-    void closeTimeline(const QUuid &uuid);
+    /** @brief Before closing a timeline, store its groups and other properties.*/
+    void closeTimeline(const QUuid uuid);
+    /** @brief store groups in our properties.*/
+    void storeGroups(const QUuid &uuid);
     void checkUsage(const QUuid &uuid);
     QList<QUuid> getTimelinesUuids() const;
     /** @brief Returns the number of timelines in this project.*/
-    int timelineCount() const;
+    int openedTimelineCount() const;
     /** @brief Get the currently active project name.*/
     const QString projectName() const;
     /** @brief Returns the project's main uuid.*/
@@ -293,6 +294,22 @@ public:
     /** @brief Thumbnail for a sequence was updated, remove it from the update list.*/
     void sequenceThumbUpdated(const QUuid &uuid);
 
+    /** @brief Replace proxy clips with originals for rendering. */
+    static void useOriginals(QDomDocument &doc);
+    static void processProxyNodes(QDomNodeList producers, const QString &root, const QMap<QString, QString> &proxies);
+    /** @brief Disable all subtitle filters of @param doc */
+    static void disableSubtitles(QDomDocument &doc);
+    /** @brief Sets the color of the first producer in @param doc with id "black_track" to transparent */
+    static void makeBackgroundTrackTransparent(QDomDocument &doc);
+    /** @brief Set the autoclose attribute to all playlists in @param doc.
+     *   This is eg. needed for rendering, as the process would not stop at the end of the playlist if it was not closed */
+    static void setAutoclosePlaylists(QDomDocument &doc, const QString &mainSequenceUuid);
+    /** @brief Check that the timelines hash have not changed between saved version and current status */
+    bool checkConsistency();
+
+protected:
+    static int next_id; /// next valid id to assign
+
 private:
     /** @brief Create a new KdenliveDoc using the provided QDomDocument (an
      * existing project file), used by the Open() named constructor. */
@@ -301,7 +318,7 @@ private:
     /** @brief Set document default properties using hard-coded values and KdenliveSettings.
      *  @param newDocument true if we are creating a new document, false when opening an existing one
      */
-    void initializeProperties(bool newDocument = true);
+    void initializeProperties(bool newDocument = true, std::pair<int, int> tracks = {}, int audioChannels = 0);
     QUuid m_uuid;
     QDomDocument m_document;
     int m_clipsCount;

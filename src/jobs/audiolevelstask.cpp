@@ -48,19 +48,19 @@ void AudioLevelsTask::start(const ObjectId &owner, QObject *object, bool force)
     AudioLevelsTask *task = new AudioLevelsTask(owner, object);
     // Otherwise, start a new audio levels generation thread.
     task->m_isForce = force;
-    pCore->taskManager.startTask(owner.second, task);
+    pCore->taskManager.startTask(owner.itemId, task);
 }
 
 void AudioLevelsTask::run()
 {
-    AbstractTaskDone whenFinished(m_owner.second, this);
+    AbstractTaskDone whenFinished(m_owner.itemId, this);
     if (m_isCanceled || pCore->taskManager.isBlocked()) {
         return;
     }
     QMutexLocker lock(&m_runMutex);
     m_running = true;
     // 2 channels interleaved of uchar values
-    auto binClip = pCore->projectItemModel()->getClipByBinID(QString::number(m_owner.second));
+    auto binClip = pCore->projectItemModel()->getClipByBinID(QString::number(m_owner.itemId));
     if (binClip == nullptr) {
         // Clip was deleted
         return;
@@ -132,21 +132,24 @@ void AudioLevelsTask::run()
         } else if (service.startsWith(QLatin1String("xml"))) {
             service = QStringLiteral("xml-nogl");
         }
-        QScopedPointer<Mlt::Producer> audioProducer(new Mlt::Producer(producer->get_profile(), service.toUtf8().constData(), producer->get("resource")));
-        if (!audioProducer->is_valid()) {
-            QMetaObject::invokeMethod(pCore.get(), "displayBinMessage", Qt::QueuedConnection,
-                                      Q_ARG(QString, i18n("Audio thumbs: cannot open file %1", producer->get("resource"))),
+        const QString res = qstrdup(producer->get("resource"));
+        Mlt::Producer *aProd = new Mlt::Producer(producer->get_profile(), service.toUtf8().constData(), res.toUtf8().constData());
+        if (!aProd->is_valid()) {
+            QMetaObject::invokeMethod(pCore.get(), "displayBinMessage", Qt::QueuedConnection, Q_ARG(QString, i18n("Audio thumbs: cannot open file %1", res)),
                                       Q_ARG(int, int(KMessageWidget::Warning)));
+            delete aProd;
             return;
         }
-        audioProducer->set("video_index", "-1");
-        audioProducer->set("audio_index", stream);
+        aProd->set("video_index", "-1");
+        aProd->set("audio_index", stream);
         Mlt::Filter chans(producer->get_profile(), "audiochannels");
         Mlt::Filter converter(producer->get_profile(), "audioconvert");
         Mlt::Filter levels(producer->get_profile(), "audiolevel");
-        audioProducer->attach(chans);
-        audioProducer->attach(converter);
-        audioProducer->attach(levels);
+        aProd->attach(chans);
+        aProd->attach(converter);
+        aProd->attach(levels);
+        std::unique_ptr<Mlt::Producer> audioProducer;
+        audioProducer.reset(aProd);
 
         double framesPerSecond = audioProducer->get_fps();
         mlt_audio_format audioFormat = mlt_audio_s16;

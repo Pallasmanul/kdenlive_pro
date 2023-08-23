@@ -129,7 +129,7 @@ SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
                <string>Select output destination</string>
               </property>
               <property name="mode">
-               <set>KFile::File</set>
+               <set>KFile::File|KFile::LocalOnly</set>
               </property>
               <property name="acceptMode">
                <enum>QFileDialog::AcceptSave</enum>
@@ -241,7 +241,7 @@ SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
                     <property name="flat">
                      <bool>true</bool>
                     </property>
-                    <property name="configFile" stdset="0">
+                    <property name="configFile">
                      <string>:data/kdenlive_renderprofiles.knsrc</string>
                     </property>
                    </widget>
@@ -393,13 +393,6 @@ SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
              </widget>
             </item>
             <item>
-             <widget class="QRadioButton" name="render_multi">
-              <property name="text">
-               <string>Guide Multi-Export</string>
-              </property>
-             </widget>
-            </item>
-            <item>
              <spacer name="zoneSpace">
               <property name="orientation">
                <enum>Qt::Horizontal</enum>
@@ -416,6 +409,12 @@ SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
           </item>
           <item row="5" column="0">
            <widget class="QGroupBox" name="guide_multi_box">
+            <property name="title">
+             <string>Guide Multi-Export</string>
+            </property>
+            <property name="checkable">
+             <bool>true</bool>
+            </property>
             <layout class="QHBoxLayout" name="horizontalLayout_3">
              <item>
               <widget class="QLabel" name="label">
@@ -432,7 +431,7 @@ SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
                  <verstretch>0</verstretch>
                 </sizepolicy>
                </property>
-               <property name="onlyUsed">
+               <property name="onlyUsed" stdset="0">
                 <bool>true</bool>
                </property>
               </widget>
@@ -555,29 +554,6 @@ SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
                   </property>
                   <property name="maximum">
                    <number>10000</number>
-                  </property>
-                 </widget>
-                </item>
-                <item>
-                 <widget class="QToolButton" name="rescale_keep">
-                  <property name="toolTip">
-                   <string>Preserve aspect ratio</string>
-                  </property>
-                  <property name="text">
-                   <string>...</string>
-                  </property>
-                  <property name="icon">
-                   <iconset theme="edit-link">
-                    <normaloff>.</normaloff>.</iconset>
-                  </property>
-                  <property name="checkable">
-                   <bool>true</bool>
-                  </property>
-                  <property name="checked">
-                   <bool>false</bool>
-                  </property>
-                  <property name="autoRaise">
-                   <bool>true</bool>
                   </property>
                  </widget>
                 </item>
@@ -797,9 +773,6 @@ SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
                 </property>
                 <property name="closeButtonVisible">
                  <bool>false</bool>
-                </property>
-                <property name="messageType">
-                 <enum>KMessageWidget::Information</enum>
                 </property>
                </widget>
               </item>
@@ -1113,15 +1086,15 @@ SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
    <header>kcombobox.h</header>
   </customwidget>
   <customwidget>
-   <class>MarkerCategoryChooser</class>
-   <extends>QComboBox</extends>
-   <header>widgets/markercategorychooser.h</header>
-  </customwidget>
-  <customwidget>
    <class>KUrlRequester</class>
    <extends>QWidget</extends>
    <header>kurlrequester.h</header>
    <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>KNSWidgets::Button</class>
+   <extends>QPushButton</extends>
+   <header>KNSWidgets/Button</header>
   </customwidget>
   <customwidget>
    <class>KMessageWidget</class>
@@ -1136,9 +1109,9 @@ SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
    <container>1</container>
   </customwidget>
   <customwidget>
-   <class>KNSWidgets::Button</class>
-   <extends>QPushButton</extends>
-   <header>KNSWidgets/Button</header>
+   <class>MarkerCategoryChooser</class>
+   <extends>QComboBox</extends>
+   <header>widgets/markercategorychooser.h</header>
   </customwidget>
  </customwidgets>
  <tabstops>
@@ -1152,7 +1125,6 @@ SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
   <tabstop>render_full</tabstop>
   <tabstop>render_zone</tabstop>
   <tabstop>render_guide</tabstop>
-  <tabstop>render_multi</tabstop>
   <tabstop>guide_start</tabstop>
   <tabstop>guide_end</tabstop>
   <tabstop>options</tabstop>
@@ -1164,7 +1136,6 @@ SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
   <tabstop>rescale</tabstop>
   <tabstop>rescale_width</tabstop>
   <tabstop>rescale_height</tabstop>
-  <tabstop>rescale_keep</tabstop>
   <tabstop>tc_type</tabstop>
   <tabstop>audio_box</tabstop>
   <tabstop>stemAudioExport</tabstop>

@@ -17,6 +17,7 @@
 #include "kdenlivesettings.h"
 #include "macros.hpp"
 #include "snapmodel.hpp"
+#include "timeline2/view/previewmanager.h"
 #include "trackmodel.hpp"
 #include "transitions/transitionsrepository.hpp"
 #include <QDebug>
@@ -42,8 +43,8 @@ RTTR_REGISTRATION
 }
 #endif
 
-TimelineItemModel::TimelineItemModel(const QUuid &uuid, Mlt::Profile *profile, std::weak_ptr<DocUndoStack> undo_stack)
-    : TimelineModel(uuid, profile, std::move(undo_stack))
+TimelineItemModel::TimelineItemModel(const QUuid &uuid, std::weak_ptr<DocUndoStack> undo_stack)
+    : TimelineModel(uuid, std::move(undo_stack))
 {
     m_guidesModel->registerSnapModel(std::static_pointer_cast<SnapInterface>(m_snaps));
 }
@@ -54,9 +55,9 @@ void TimelineItemModel::finishConstruct(const std::shared_ptr<TimelineItemModel>
     ptr->m_groups = std::make_unique<GroupsModel>(ptr);
 }
 
-std::shared_ptr<TimelineItemModel> TimelineItemModel::construct(const QUuid &uuid, Mlt::Profile *profile, std::weak_ptr<DocUndoStack> undo_stack)
+std::shared_ptr<TimelineItemModel> TimelineItemModel::construct(const QUuid &uuid, std::weak_ptr<DocUndoStack> undo_stack)
 {
-    std::shared_ptr<TimelineItemModel> ptr(new TimelineItemModel(uuid, profile, std::move(undo_stack)));
+    std::shared_ptr<TimelineItemModel> ptr(new TimelineItemModel(uuid, std::move(undo_stack)));
     finishConstruct(ptr);
     return ptr;
 }
@@ -535,8 +536,8 @@ void TimelineItemModel::setTrackProperty(int trackId, const QString &name, const
         roles.push_back(IsLockedRole);
     } else if (name == QLatin1String("hide")) {
         roles.push_back(IsDisabledRole);
-        if (!track->isAudioTrack()) {
-            pCore->invalidateItem(ObjectId(ObjectType::TimelineTrack, trackId));
+        if (!track->isAudioTrack() && !isLoading) {
+            pCore->invalidateItem(ObjectId(ObjectType::TimelineTrack, trackId, m_uuid));
             pCore->refreshProjectMonitorOnce();
             updateMultiTrack = true;
         }
@@ -569,7 +570,7 @@ void TimelineItemModel::setTrackStackEnabled(int tid, bool enable)
 void TimelineItemModel::importTrackEffects(int tid, std::weak_ptr<Mlt::Service> service)
 {
     std::shared_ptr<TrackModel> track = getTrackById(tid);
-    std::shared_ptr<Mlt::Tractor> destination = track->getTrackService();
+    Mlt::Tractor *destination = track->getTrackService();
     // Audio mixer effects are attached to the Tractor service, while track effects are attached to first playlist service
     if (auto ptr = service.lock()) {
         for (int i = 0; i < ptr->filter_count(); i++) {
@@ -808,4 +809,31 @@ void TimelineItemModel::_resetView()
 {
     beginResetModel();
     endResetModel();
+}
+
+void TimelineItemModel::passSequenceProperties(const QMap<QString, QString> baseProperties)
+{
+    QMapIterator<QString, QString> i(baseProperties);
+    while (i.hasNext()) {
+        i.next();
+        tractor()->set(QString("kdenlive:sequenceproperties.%1").arg(i.key()).toUtf8().constData(), i.value().toUtf8().constData());
+    }
+    // Store groups data
+    tractor()->set("kdenlive:sequenceproperties.groups", groupsData().toUtf8().constData());
+    tractor()->set("kdenlive:sequenceproperties.documentuuid", pCore->currentDoc()->uuid().toString().toUtf8().constData());
+    // Save timeline guides
+    const QString guidesData = getGuideModel()->toJson();
+    tractor()->set("kdenlive:sequenceproperties.guides", guidesData.toUtf8().constData());
+    QPair<int, int> tracks = getAVtracksCount();
+    tractor()->set("kdenlive:sequenceproperties.hasAudio", tracks.first > 0 ? 1 : 0);
+    tractor()->set("kdenlive:sequenceproperties.hasVideo", tracks.second > 0 ? 1 : 0);
+    tractor()->set("kdenlive:sequenceproperties.tracksCount", tracks.first + tracks.second);
+
+    tractor()->set("kdenlive:sequenceproperties.position", pCore->getMonitorPosition());
+
+    if (hasTimelinePreview()) {
+        QPair<QStringList, QStringList> chunks = previewManager()->previewChunks();
+        tractor()->set("kdenlive:sequenceproperties.previewchunks", chunks.first.join(QLatin1Char(',')).toUtf8().constData());
+        tractor()->set("kdenlive:sequenceproperties.dirtypreviewchunks", chunks.second.join(QLatin1Char(',')).toUtf8().constData());
+    }
 }

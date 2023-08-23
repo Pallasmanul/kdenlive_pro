@@ -157,9 +157,8 @@ void EffectStackModel::removeEffect(const std::shared_ptr<EffectItemModel> &effe
     if (auto ptr = effect->parentItem().lock()) parentId = ptr->getId();
     int current = getActiveEffect();
     if (current >= rootItem->childCount() - 1) {
-        current--;
+        setActiveEffect(current - 1);
     }
-    setActiveEffect(current);
     int currentRow = effect->row();
     Fun undo = addItem_lambda(effect, parentId);
     if (currentRow != rowCount() - 1) {
@@ -176,9 +175,9 @@ void EffectStackModel::removeEffect(const std::shared_ptr<EffectItemModel> &effe
         inFades = int(m_fadeIns.size()) - inFades;
         outFades = int(m_fadeOuts.size()) - outFades;
         QString effectName = EffectsRepository::get()->getName(effect->getAssetId());
-        Fun update = [this, current, inFades, outFades]() {
+        Fun update = [this, inFades, outFades]() {
             // Required to build the effect view
-            if (current < 0 || rowCount() == 0) {
+            if (rowCount() == 0) {
                 // Stack is now empty
                 Q_EMIT dataChanged(QModelIndex(), QModelIndex(), {});
             } else {
@@ -201,7 +200,7 @@ void EffectStackModel::removeEffect(const std::shared_ptr<EffectItemModel> &effe
             pCore->updateItemKeyframes(m_ownerId);
             return true;
         };
-        Fun update2 = [this, inFades, outFades]() {
+        Fun update2 = [this, inFades, outFades, current]() {
             // Required to build the effect view
             QVector<int> roles = {TimelineModel::EffectNamesRole};
             // TODO: only update if effect is fade or keyframe
@@ -213,6 +212,7 @@ void EffectStackModel::removeEffect(const std::shared_ptr<EffectItemModel> &effe
             Q_EMIT dataChanged(QModelIndex(), QModelIndex(), roles);
             updateEffectZones();
             pCore->updateItemKeyframes(m_ownerId);
+            setActiveEffect(current);
             return true;
         };
         update();
@@ -319,7 +319,7 @@ bool EffectStackModel::fromXml(const QDomElement &effectsXml, Fun &undo, Fun &re
                 continue;
             }
         }
-        if (m_ownerId.first == ObjectType::TimelineClip && EffectsRepository::get()->isUnique(effectId) && hasEffect(effectId)) {
+        if (m_ownerId.type == ObjectType::TimelineClip && EffectsRepository::get()->isUnique(effectId) && hasEffect(effectId)) {
             pCore->displayMessage(i18n("Effect %1 cannot be added twice.", EffectsRepository::get()->getName(effectId)), ErrorMessage);
             return false;
         }
@@ -334,7 +334,7 @@ bool EffectStackModel::fromXml(const QDomElement &effectsXml, Fun &undo, Fun &re
             effect->filter().set("in", in.toUtf8().constData());
             effect->filter().set("out", out.toUtf8().constData());
         }
-        QStringList keyframeParams = effect->getKeyframableParameters();
+        QMap<QString, std::pair<ParamType, bool>> keyframeParams = effect->getKeyframableParameters();
         QVector<QPair<QString, QVariant>> parameters;
         QDomNodeList params = node.elementsByTagName(QStringLiteral("property"));
         for (int j = 0; j < params.count(); j++) {
@@ -350,7 +350,8 @@ bool EffectStackModel::fromXml(const QDomElement &effectsXml, Fun &undo, Fun &re
                     currentDuration--;
                     currentDuration += currentIn;
                 }
-                QString pValue = KeyframeModel::getAnimationStringWithOffset(effect, pnode.text(), currentIn - parentIn, currentDuration);
+                QString pValue = KeyframeModel::getAnimationStringWithOffset(effect, pnode.text(), currentIn - parentIn, currentDuration,
+                                                                             keyframeParams.value(pName).first, keyframeParams.value(pName).second);
                 parameters.append(QPair<QString, QVariant>(pName, QVariant(pValue)));
             } else {
                 parameters.append(QPair<QString, QVariant>(pName, QVariant(pnode.text())));
@@ -428,7 +429,7 @@ bool EffectStackModel::copyEffect(const std::shared_ptr<AbstractEffectItem> &sou
     }
     std::shared_ptr<EffectItemModel> sourceEffect = std::static_pointer_cast<EffectItemModel>(sourceItem);
     const QString effectId = sourceEffect->getAssetId();
-    if (m_ownerId.first == ObjectType::TimelineClip && EffectsRepository::get()->isUnique(effectId) && hasEffect(effectId)) {
+    if (m_ownerId.type == ObjectType::TimelineClip && EffectsRepository::get()->isUnique(effectId) && hasEffect(effectId)) {
         pCore->displayMessage(i18n("Effect %1 cannot be added twice.", EffectsRepository::get()->getName(effectId)), ErrorMessage);
         return false;
     }
@@ -482,7 +483,7 @@ bool EffectStackModel::copyEffect(const std::shared_ptr<AbstractEffectItem> &sou
 bool EffectStackModel::appendEffect(const QString &effectId, bool makeCurrent)
 {
     QWriteLocker locker(&m_lock);
-    if (m_ownerId.first == ObjectType::TimelineClip && EffectsRepository::get()->isUnique(effectId) && hasEffect(effectId)) {
+    if (m_ownerId.type == ObjectType::TimelineClip && EffectsRepository::get()->isUnique(effectId) && hasEffect(effectId)) {
         pCore->displayMessage(i18n("Effect %1 cannot be added twice.", EffectsRepository::get()->getName(effectId)), ErrorMessage);
         return false;
     }
@@ -534,7 +535,7 @@ bool EffectStackModel::appendEffect(const QString &effectId, bool makeCurrent)
             effect->filter().set("in", out - duration);
             effect->filter().set("out", out);*/
             outFades++;
-        } else if (m_ownerId.first == ObjectType::TimelineTrack) {
+        } else if (m_ownerId.type == ObjectType::TimelineTrack) {
             effect->filter().set("out", pCore->getItemDuration(m_ownerId));
         }
         Fun update = [this, inFades, outFades]() {
@@ -685,7 +686,7 @@ bool EffectStackModel::adjustStackLength(bool adjustFromEnd, int oldIn, int oldD
             } else {
                 qDebug() << "// NULL Keyframes---------";
             }
-            if (m_ownerId.first == ObjectType::TimelineTrack && !hasZone) {
+            if (m_ownerId.type == ObjectType::TimelineTrack && !hasZone) {
                 int oldEffectOut = effect->filter().get_out();
                 Fun operation = [effect, out, logUndo]() {
                     effect->setParameter(QStringLiteral("out"), out, logUndo);
@@ -703,6 +704,26 @@ bool EffectStackModel::adjustStackLength(bool adjustFromEnd, int oldIn, int oldD
                     PUSH_LAMBDA(operation, redo);
                     PUSH_LAMBDA(reverse, undo);
                 }
+            } else if (m_ownerId.type == ObjectType::TimelineClip && effect->data(QModelIndex(), AssetParameterModel::RequiresInOut).toBool() == true) {
+                int oldEffectIn = qMax(0, effect->filter().get_in());
+                int oldEffectOut = effect->filter().get_out();
+                int newIn = pCore->getItemIn(m_ownerId);
+                int newOut = newIn + pCore->getItemDuration(m_ownerId) - 1;
+                Fun operation = [effect, newIn, newOut]() {
+                    effect->filter().set_in_and_out(newIn, newOut);
+                    qDebug() << "--new effect: " << newIn << "-" << newOut;
+                    return true;
+                };
+                bool res = operation();
+                if (!res) {
+                    return false;
+                }
+                Fun reverse = [effect, oldEffectIn, oldEffectOut]() {
+                    effect->filter().set_in_and_out(oldEffectIn, oldEffectOut);
+                    return true;
+                };
+                PUSH_LAMBDA(operation, redo);
+                PUSH_LAMBDA(reverse, undo);
             }
         }
     }
@@ -884,11 +905,16 @@ void EffectStackModel::registerItem(const std::shared_ptr<TreeItem> &item)
     // qDebug() << "$$$$$$$$$$$$$$$$$$$$$ Planting effect";
     if (!item->isRoot()) {
         auto effectItem = std::static_pointer_cast<EffectItemModel>(item);
+        if (effectItem->data(QModelIndex(), AssetParameterModel::RequiresInOut).toBool() == true) {
+            int in = pCore->getItemIn(m_ownerId);
+            int out = in + pCore->getItemDuration(m_ownerId) - 1;
+            effectItem->filter().set_in_and_out(in, out);
+        }
         if (!m_loadingExisting) {
             // qDebug() << "$$$$$$$$$$$$$$$$$$$$$ Planting effect in " << m_childServices.size();
             effectItem->plant(m_masterService);
             // Check if we have an internal effect that needs to stay on top
-            if (m_ownerId.first == ObjectType::Master || m_ownerId.first == ObjectType::TimelineTrack) {
+            if (m_ownerId.type == ObjectType::Master || m_ownerId.type == ObjectType::TimelineTrack) {
                 // check for subtitle effect
                 auto ms = m_masterService.lock();
                 int ct = ms->filter_count();
@@ -1015,9 +1041,9 @@ void EffectStackModel::importEffects(const std::weak_ptr<Mlt::Service> &service,
         int imported = 0;
         for (int i = 0; i < max; i++) {
             std::unique_ptr<Mlt::Filter> filter(ptr->filter(i));
-            if (filter->get_int("internal_added") > 0 && m_ownerId.first != ObjectType::TimelineTrack) {
+            if (filter->get_int("internal_added") > 0 && m_ownerId.type != ObjectType::TimelineTrack) {
                 // Required to load master audio effects
-                if (m_ownerId.first == ObjectType::Master && filter->get("mlt_service") == QLatin1String("avfilter.subtitles")) {
+                if (m_ownerId.type == ObjectType::Master && filter->get("mlt_service") == QLatin1String("avfilter.subtitles")) {
                     // A subtitle filter, update project
                     QMap<QString, QString> subProperties;
                     // subProperties.insert(QStringLiteral("av.filename"), filter->get("av.filename"));
@@ -1033,12 +1059,12 @@ void EffectStackModel::importEffects(const std::weak_ptr<Mlt::Service> &service,
                 }
                 continue;
             }
-            if (filter->get("kdenlive_id") == nullptr) {
+            if (!filter->property_exists("kdenlive_id")) {
                 // don't consider internal MLT stuff
                 continue;
             }
             const QString effectId = qstrdup(filter->get("kdenlive_id"));
-            if (m_ownerId.first == ObjectType::TimelineClip && EffectsRepository::get()->isUnique(effectId) && hasEffect(effectId)) {
+            if (m_ownerId.type == ObjectType::TimelineClip && EffectsRepository::get()->isUnique(effectId) && hasEffect(effectId)) {
                 pCore->displayMessage(i18n("Effect %1 cannot be added twice.", EffectsRepository::get()->getName(effectId)), ErrorMessage);
                 continue;
             }
@@ -1072,11 +1098,15 @@ void EffectStackModel::importEffects(const std::weak_ptr<Mlt::Service> &service,
             connect(effect.get(), &AssetParameterModel::replugEffect, this, &EffectStackModel::replugEffect, Qt::DirectConnection);
             connect(effect.get(), &AssetParameterModel::showEffectZone, this, &EffectStackModel::updateEffectZones);
             Fun redo = addItem_lambda(effect, rootItem->getId());
-            effect->prepareKeyframes();
+            int clipIn = ptr->get_int("in");
+            int clipOut = ptr->get_int("out");
+            if (clipOut <= clipIn) {
+                clipOut = ptr->get_int("length") - 1;
+            }
+            effect->prepareKeyframes(clipIn, clipOut);
             if (redo()) {
                 if (effectId.startsWith(QLatin1String("fadein")) || effectId.startsWith(QLatin1String("fade_from_"))) {
                     m_fadeIns.insert(effect->getId());
-                    int clipIn = ptr->get_int("in");
                     if (effect->filter().get_int("in") != clipIn) {
                         // Broken fade, fix
                         int filterLength = effect->filter().get_length() - 1;
@@ -1085,7 +1115,6 @@ void EffectStackModel::importEffects(const std::weak_ptr<Mlt::Service> &service,
                     }
                 } else if (effectId.startsWith(QLatin1String("fadeout")) || effectId.startsWith(QLatin1String("fade_to_"))) {
                     m_fadeOuts.insert(effect->getId());
-                    int clipOut = ptr->get_int("out");
                     if (effect->filter().get_int("out") != clipOut) {
                         // Broken fade, fix
                         int filterLength = effect->filter().get_length() - 1;
@@ -1199,7 +1228,7 @@ bool EffectStackModel::checkConsistency()
         int kdenliveFilterCount = 0;
         for (int i = 0; i < ptr->filter_count(); i++) {
             std::shared_ptr<Mlt::Filter> filt(ptr->filter(i));
-            if (filt->get("kdenlive_id") != nullptr) {
+            if (filt->property_exists("kdenlive_id")) {
                 kdenliveFilterCount++;
             }
             // qDebug() << "FILTER: "<<i<<" : "<<ptr->filter(i)->get("mlt_service");
@@ -1232,7 +1261,6 @@ bool EffectStackModel::checkConsistency()
             ct++;
         }
     }
-
     return true;
 }
 
@@ -1402,7 +1430,7 @@ bool EffectStackModel::addEffectKeyFrame(int frame, double normalisedVal)
     }
     std::shared_ptr<EffectItemModel> sourceEffect = std::static_pointer_cast<EffectItemModel>(rootItem->child(ix));
     std::shared_ptr<KeyframeModelList> listModel = sourceEffect->getKeyframeModel();
-    if (m_ownerId.first == ObjectType::TimelineTrack) {
+    if (m_ownerId.type == ObjectType::TimelineTrack) {
         sourceEffect->filter().set("out", pCore->getItemDuration(m_ownerId));
     }
     return listModel->addKeyframe(frame, normalisedVal);
@@ -1429,7 +1457,7 @@ bool EffectStackModel::updateKeyFrame(int oldFrame, int newFrame, QVariant norma
     }
     std::shared_ptr<EffectItemModel> sourceEffect = std::static_pointer_cast<EffectItemModel>(rootItem->child(ix));
     std::shared_ptr<KeyframeModelList> listModel = sourceEffect->getKeyframeModel();
-    if (m_ownerId.first == ObjectType::TimelineTrack) {
+    if (m_ownerId.type == ObjectType::TimelineTrack) {
         sourceEffect->filter().set("out", pCore->getItemDuration(m_ownerId));
     }
     return listModel->updateKeyframe(GenTime(oldFrame, pCore->getCurrentFps()), GenTime(newFrame, pCore->getCurrentFps()), std::move(normalisedVal));
@@ -1473,7 +1501,23 @@ QVariantList EffectStackModel::getEffectZones() const
 void EffectStackModel::updateEffectZones()
 {
     Q_EMIT dataChanged(QModelIndex(), QModelIndex(), {TimelineModel::EffectZonesRole});
-    if (m_ownerId.first == ObjectType::Master) {
+    if (m_ownerId.type == ObjectType::Master) {
         Q_EMIT updateMasterZones();
+    }
+}
+
+void EffectStackModel::passEffects(Mlt::Producer *producer, const QString &exception)
+{
+    auto ms = m_masterService.lock();
+    int ct = ms->filter_count();
+    for (int i = 0; i < ct; i++) {
+        if (ms->filter(i)->get_int("internal_added") > 0 || !ms->filter(i)->property_exists("kdenlive_id")) {
+            continue;
+        }
+        if (!exception.isEmpty() && QString(ms->filter(i)->get("mlt_service")) == exception) {
+            continue;
+        }
+        auto *filter = new Mlt::Filter(*ms->filter(i));
+        producer->attach(*filter);
     }
 }

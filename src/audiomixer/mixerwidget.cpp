@@ -30,19 +30,6 @@
 #include <QSpinBox>
 #include <QStyle>
 #include <QToolButton>
-#include <utility>
-
-static inline int fromDB(double level)
-{
-    int value = 60;
-    if (level > 0.) {
-        // increase volume
-        value = 100 - int((pow(10, 1. - level / 24) - 1) / .225);
-    } else if (level < 0.) {
-        value = int((10 - pow(10, 1. - level / -50)) / -0.11395) + 59;
-    }
-    return value;
-}
 
 void MixerWidget::property_changed(mlt_service, MixerWidget *widget, mlt_event_data data)
 {
@@ -81,28 +68,7 @@ void MixerWidget::property_changedV2(mlt_service, MixerWidget *widget, mlt_event
     }
 }
 
-MixerWidget::MixerWidget(int tid, std::shared_ptr<Mlt::Tractor> service, QString trackTag, const QString &trackName, MixerManager *parent)
-    : QWidget(parent)
-    , m_manager(parent)
-    , m_tid(tid)
-    , m_levelFilter(nullptr)
-    , m_monitorFilter(nullptr)
-    , m_balanceFilter(nullptr)
-    , m_channels(pCore->audioChannels())
-    , m_balanceSlider(nullptr)
-    , m_maxLevels(qMax(30, int(service->get_fps() * 1.5)))
-    , m_solo(nullptr)
-    , m_collapse(nullptr)
-    , m_monitor(nullptr)
-    , m_lastVolume(0)
-    , m_listener(nullptr)
-    , m_recording(false)
-    , m_trackTag(std::move(trackTag))
-{
-    buildUI(service.get(), trackName);
-}
-
-MixerWidget::MixerWidget(int tid, Mlt::Tractor *service, QString trackTag, const QString &trackName, MixerManager *parent)
+MixerWidget::MixerWidget(int tid, Mlt::Tractor *service, QString trackTag, const QString &trackName, int sliderHandle, MixerManager *parent)
     : QWidget(parent)
     , m_manager(parent)
     , m_tid(tid)
@@ -120,6 +86,7 @@ MixerWidget::MixerWidget(int tid, Mlt::Tractor *service, QString trackTag, const
     , m_listener(nullptr)
     , m_recording(false)
     , m_trackTag(std::move(trackTag))
+    , m_sliderHandleSize(sliderHandle)
 {
     buildUI(service, trackName);
 }
@@ -135,7 +102,7 @@ void MixerWidget::buildUI(Mlt::Tractor *service, const QString &trackName)
 {
     setFont(QFontDatabase::systemFont(QFontDatabase::SmallestReadableFont));
     // Build audio meter widget
-    m_audioMeterWidget.reset(new AudioLevelWidget(width(), this));
+    m_audioMeterWidget.reset(new AudioLevelWidget(width(), m_sliderHandleSize, this));
     // initialize for stereo display
     for (int i = 0; i < m_channels; i++) {
         m_audioData << -100;
@@ -402,6 +369,8 @@ void MixerWidget::buildUI(Mlt::Tractor *service, const QString &trackName)
         lay->addLayout(balancelay);
     }
     auto *hlay = new QHBoxLayout;
+    hlay->setSpacing(0);
+    hlay->setContentsMargins(0, 0, 0, 0);
     hlay->addWidget(m_audioMeterWidget.get());
     hlay->addWidget(m_volumeSlider);
     lay->addLayout(hlay);

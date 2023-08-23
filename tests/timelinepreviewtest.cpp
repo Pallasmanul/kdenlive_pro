@@ -5,17 +5,18 @@
 */
 #include "catch.hpp"
 #include "test_utils.hpp"
-
+// test specific headers
 #include <QString>
 #include <cmath>
 #include <iostream>
 #include <tuple>
 #include <unordered_set>
 
-#include "definitions.h"
-#define private public
-#define protected public
+#include <chrono>
+#include <thread>
+
 #include "bin/binplaylist.hpp"
+#include "definitions.h"
 #include "doc/kdenlivedoc.h"
 #include "timeline2/model/builders/meltBuilder.hpp"
 #include "timeline2/view/previewmanager.h"
@@ -43,7 +44,7 @@ TEST_CASE("Timeline preview insert-remove", "[TimelinePreview]")
     pCore->m_projectManager = &mocked;
     mocked.m_project = &mockedDoc;
     QDateTime documentDate = QDateTime::currentDateTime();
-    mocked.updateTimeline(0, false, QString(), QString(), documentDate, 0);
+    mocked.updateTimeline(false, QString(), QString(), documentDate, 0);
     auto timeline = mockedDoc.getTimeline(mockedDoc.uuid());
     mocked.m_activeTimelineModel = timeline;
 
@@ -61,7 +62,7 @@ TEST_CASE("Timeline preview insert-remove", "[TimelinePreview]")
     dir.mkdir(QLatin1String("preview"));
 
     int tid3 = timeline->getTrackIndexFromPosition(2);
-    QString binId = createProducer(*timeline->getProfile(), "red", binModel);
+    QString binId = createProducer(pCore->getProjectProfile(), "red", binModel);
 
     // Initialize timeline preview
     timeline->initializePreviewManager();
@@ -74,7 +75,7 @@ TEST_CASE("Timeline preview insert-remove", "[TimelinePreview]")
 
     // Wait until the preview rendering is over
     while (timeline->previewManager()->isRunning()) {
-        sleep(2);
+        std::this_thread::sleep_for(std::chrono::milliseconds(2000));
         qDebug() << ":::: WAITING FOR PROGRESS...";
         qApp->processEvents();
     }

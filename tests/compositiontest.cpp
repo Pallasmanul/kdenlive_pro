@@ -3,8 +3,10 @@
     SPDX-FileCopyrightText: 2017-2019 Nicolas Carion <french.ebook.lover@gmail.com>
     SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
 */
-#include "doc/kdenlivedoc.h"
+
 #include "test_utils.hpp"
+// test specific headers
+#include "doc/kdenlivedoc.h"
 
 static QString getACompo()
 {
@@ -38,21 +40,15 @@ TEST_CASE("Basic creation/deletion of a composition", "[CompositionModel]")
 
     KdenliveDoc document(undoStack);
     Mock<KdenliveDoc> docMock(document);
+    When(Method(docMock, getCacheDir)).AlwaysReturn(QDir(QStandardPaths::writableLocation(QStandardPaths::CacheLocation)));
     KdenliveDoc &mockedDoc = docMock.get();
 
-    // We mock the project class so that the undoStack function returns our undoStack, and our mocked document
-    Mock<ProjectManager> pmMock;
-    When(Method(pmMock, undoStack)).AlwaysReturn(undoStack);
-    When(Method(pmMock, cacheDir)).AlwaysReturn(QDir(QStandardPaths::writableLocation(QStandardPaths::CacheLocation)));
-    When(Method(pmMock, current)).AlwaysReturn(&mockedDoc);
-    ProjectManager &mocked = pmMock.get();
-    pCore->m_projectManager = &mocked;
-    mocked.m_project = &mockedDoc;
+    pCore->projectManager()->m_project = &mockedDoc;
     QDateTime documentDate = QDateTime::currentDateTime();
-    mocked.updateTimeline(0, false, QString(), QString(), documentDate, 0);
+    pCore->projectManager()->updateTimeline(false, QString(), QString(), documentDate, 0);
     auto timeline = mockedDoc.getTimeline(mockedDoc.uuid());
-    mocked.m_activeTimelineModel = timeline;
-    mocked.testSetActiveDocument(&mockedDoc, timeline);
+    pCore->projectManager()->m_activeTimelineModel = timeline;
+    pCore->projectManager()->testSetActiveDocument(&mockedDoc, timeline);
 
     REQUIRE(timeline->getCompositionsCount() == 0);
     int id1 = CompositionModel::construct(timeline, aCompo, QString());
@@ -71,8 +67,10 @@ TEST_CASE("Basic creation/deletion of a composition", "[CompositionModel]")
     REQUIRE(timeline->getCompositionsCount() == 1);
     REQUIRE(timeline->requestItemDeletion(id1));
     REQUIRE(timeline->getCompositionsCount() == 0);
+    pCore->taskManager.slotCancelJobs();
+    mockedDoc.closeTimeline(timeline->uuid());
+    timeline.reset();
     pCore->projectItemModel()->clean();
-    pCore->m_projectManager = nullptr;
 }
 
 TEST_CASE("Composition manipulation", "[CompositionModel]")
@@ -80,21 +78,15 @@ TEST_CASE("Composition manipulation", "[CompositionModel]")
     std::shared_ptr<DocUndoStack> undoStack = std::make_shared<DocUndoStack>(nullptr);
     KdenliveDoc document(undoStack, {0, 3});
     Mock<KdenliveDoc> docMock(document);
+    When(Method(docMock, getCacheDir)).AlwaysReturn(QDir(QStandardPaths::writableLocation(QStandardPaths::CacheLocation)));
     KdenliveDoc &mockedDoc = docMock.get();
 
-    // We mock the project class so that the undoStack function returns our undoStack, and our mocked document
-    Mock<ProjectManager> pmMock;
-    When(Method(pmMock, undoStack)).AlwaysReturn(undoStack);
-    When(Method(pmMock, cacheDir)).AlwaysReturn(QDir(QStandardPaths::writableLocation(QStandardPaths::CacheLocation)));
-    When(Method(pmMock, current)).AlwaysReturn(&mockedDoc);
-    ProjectManager &mocked = pmMock.get();
-    pCore->m_projectManager = &mocked;
-    mocked.m_project = &mockedDoc;
+    pCore->projectManager()->m_project = &mockedDoc;
     QDateTime documentDate = QDateTime::currentDateTime();
-    mocked.updateTimeline(0, false, QString(), QString(), documentDate, 0);
+    pCore->projectManager()->updateTimeline(false, QString(), QString(), documentDate, 0);
     auto timeline = mockedDoc.getTimeline(mockedDoc.uuid());
-    mocked.m_activeTimelineModel = timeline;
-    mocked.testSetActiveDocument(&mockedDoc, timeline);
+    pCore->projectManager()->m_activeTimelineModel = timeline;
+    pCore->projectManager()->testSetActiveDocument(&mockedDoc, timeline);
 
     QString aCompo = getACompo();
 
@@ -453,6 +445,8 @@ TEST_CASE("Composition manipulation", "[CompositionModel]")
         REQUIRE(timeline->requestItemResize(cid1, length - 2, true) > -1);
         REQUIRE(timeline->requestItemResize(cid2, length, false) > -1);
     }
+    pCore->taskManager.slotCancelJobs();
+    mockedDoc.closeTimeline(timeline->uuid());
+    timeline.reset();
     pCore->projectItemModel()->clean();
-    pCore->m_projectManager = nullptr;
 }

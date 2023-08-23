@@ -9,6 +9,7 @@
 #include <memory>
 #include <unordered_map>
 
+#include <QSlider>
 #include <QWidget>
 
 namespace Mlt {
@@ -20,6 +21,14 @@ class QHBoxLayout;
 class TimelineItemModel;
 class QScrollArea;
 
+/** MySlider class is only here to get the slider handle size used when painting the audio level scale */
+class MySlider : public QSlider
+{
+public:
+    explicit MySlider(QWidget *parent = nullptr);
+    int getHandleHeight();
+};
+
 class MixerManager : public QWidget
 {
     Q_OBJECT
@@ -27,7 +36,7 @@ class MixerManager : public QWidget
 public:
     MixerManager(QWidget *parent);
     /** @brief Shows the parameters of the given transition model */
-    void registerTrack(int tid, std::shared_ptr<Mlt::Tractor> service, const QString &trackTag, const QString &trackName);
+    void registerTrack(int tid, Mlt::Tractor *service, const QString &trackTag, const QString &trackName);
     void deregisterTrack(int tid);
     void setModel(std::shared_ptr<TimelineItemModel> model);
     void cleanup();
@@ -78,4 +87,5 @@ private:
     int m_recommendedWidth;
     int m_monitorTrack;
     bool m_filterIsV2;
+    int m_sliderHandle;
 };

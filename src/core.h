@@ -32,6 +32,7 @@ class KdenliveDoc;
 class LibraryWidget;
 class MainWindow;
 class MediaCapture;
+class MediaBrowser;
 class MixerManager;
 class Monitor;
 class MonitorManager;
@@ -112,6 +113,8 @@ public:
     Timecode timecode() const;
     /** @brief Returns a pointer to the monitor manager. */
     MonitorManager *monitorManager();
+    /** @brief Returns a pointer to the media browser widget. */
+    MediaBrowser *mediaBrowser();
     /** @brief Returns a pointer to the view of the project bin. */
     Bin *bin();
     /** @brief Returns a pointer to the view of the active bin (or main bin on no focus). */
@@ -219,7 +222,7 @@ public:
     void updateItemModel(ObjectId id, const QString &service);
     /** Show / hide keyframes for a timeline clip */
     void showClipKeyframes(ObjectId id, bool enable);
-    Mlt::Profile *thumbProfile();
+    Mlt::Profile &thumbProfile();
     /** @brief Returns the current project duration */
     int projectDuration() const;
     /** @brief Returns true if current project has some rendered timeline preview  */
@@ -247,7 +250,7 @@ public:
     /** @brief Update current project's tags */
     void updateProjectTags(int previousCount, const QMap <int, QStringList> &tags);
     /** @brief Returns the project profile */
-    Mlt::Profile *getProjectProfile();
+    Mlt::Profile &getProjectProfile();
     /** @brief Returns the consumer profile, that will be scaled
      *  according to preview settings. Should only be used on the consumer */
     Mlt::Profile &getMonitorProfile();
@@ -277,11 +280,13 @@ public:
     /** @brief Resize current mix item */
     void resizeMix(int cid, int duration, MixAlignment align, int leftFrames = -1);
     /** @brief Get Mix cut pos (the duration of the mix on the right clip) */
-    int getMixCutPos(int cid) const;
+    int getMixCutPos(const ObjectId &) const;
     /** @brief Get alignment info for a mix item */
-    MixAlignment getMixAlign(int cid) const;
+    MixAlignment getMixAlign(const ObjectId &) const;
     /** @brief Closing current document, do some cleanup */
     void cleanup();
+    /** @brief Clear clip reference in timeremap widget */
+    void clearTimeRemap();
     /** @brief Create the dock widgets */
     void buildDocks();
 #if KNEWSTUFF_VERSION < QT_VERSION_CHECK(5, 98, 0)
@@ -327,6 +332,7 @@ private:
     GuidesList *m_guidesList{nullptr};
     TimeRemap *m_timeRemapWidget{nullptr};
     MixerManager *m_mixerWidget{nullptr};
+    MediaBrowser *m_mediaBrowser{nullptr};
 
     /** @brief Current project's profile path */
     QString m_currentProfile;
@@ -334,17 +340,17 @@ private:
     QString m_profile;
     QString m_packageType;
     Timecode m_timecode;
-    std::unique_ptr<Mlt::Profile> m_thumbProfile;
+    Mlt::Profile m_thumbProfile;
     /** @brief Mlt profile used in the consumer 's monitors */
     Mlt::Profile m_monitorProfile;
     /** @brief Mlt profile used to build the project's clips */
-    std::unique_ptr<Mlt::Profile> m_projectProfile;
+    Mlt::Profile m_projectProfile;
     bool m_guiConstructed = false;
     /** @brief Check that the profile is valid (width is a multiple of 8 and height a multiple of 2 */
     void checkProfileValidity();
     std::unique_ptr<MediaCapture> m_capture;
     QUrl m_mediaCaptureFile;
-    QMutex m_thumbProfileMutex;
+    void resetThumbProfile();
 
 public Q_SLOTS:
     /** @brief Trigger (launch) an action by its actionCollection name */
@@ -426,4 +432,6 @@ Q_SIGNALS:
     void updateDefaultMarkerCategory();
     /** @brief The default speech engine was changed */
     void speechEngineChanged();
+    /** @brief Auto fit track height property changed, adjust size */
+    void autoTrackHeight(bool);
 };
