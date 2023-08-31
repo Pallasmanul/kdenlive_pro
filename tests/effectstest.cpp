@@ -3,20 +3,17 @@
     SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
 */
 #include "catch.hpp"
+#include "test_utils.hpp"
+// test specific headers
 #include "doc/docundostack.hpp"
 #include "doc/kdenlivedoc.h"
-#include "test_utils.hpp"
-
-#include <QString>
 #include <cmath>
 #include <iostream>
 #include <tuple>
 #include <unordered_set>
 
-#include "definitions.h"
-#define private public
-#define protected public
 #include "core.h"
+#include "definitions.h"
 #include "effects/effectsrepository.hpp"
 #include "effects/effectstack/model/effectitemmodel.hpp"
 #include "effects/effectstack/model/effectstackmodel.hpp"
@@ -31,29 +28,20 @@ TEST_CASE("Effects stack", "[Effects]")
     // Here we do some trickery to enable testing.
     // We mock the project class so that the undoStack function returns our undoStack
     KdenliveDoc document(undoStack);
-    Mock<KdenliveDoc> docMock(document);
-    KdenliveDoc &mockedDoc = docMock.get();
 
-    // We mock the project class so that the undoStack function returns our undoStack, and our mocked document
-    Mock<ProjectManager> pmMock;
-    When(Method(pmMock, undoStack)).AlwaysReturn(undoStack);
-    When(Method(pmMock, cacheDir)).AlwaysReturn(QDir(QStandardPaths::writableLocation(QStandardPaths::CacheLocation)));
-    When(Method(pmMock, current)).AlwaysReturn(&mockedDoc);
-    ProjectManager &mocked = pmMock.get();
-    pCore->m_projectManager = &mocked;
-    mocked.m_project = &mockedDoc;
+    pCore->projectManager()->m_project = &document;
     QDateTime documentDate = QDateTime::currentDateTime();
-    mocked.updateTimeline(0, false, QString(), QString(), documentDate, 0);
-    auto timeline = mockedDoc.getTimeline(mockedDoc.uuid());
-    mocked.m_activeTimelineModel = timeline;
-    mocked.testSetActiveDocument(&mockedDoc, timeline);
+    pCore->projectManager()->updateTimeline(false, QString(), QString(), documentDate, 0);
+    auto timeline = document.getTimeline(document.uuid());
+    pCore->projectManager()->m_activeTimelineModel = timeline;
+    pCore->projectManager()->testSetActiveDocument(&document, timeline);
 
     // Create a request
     int tid1;
     REQUIRE(timeline->requestTrackInsertion(-1, tid1));
 
     // Create clip
-    QString binId = createProducer(*timeline->getProfile(), "red", binModel);
+    QString binId = createProducer(pCore->getProjectProfile(), "red", binModel);
     int cid1;
     REQUIRE(timeline->requestClipInsertion(binId, tid1, 100, cid1));
     std::shared_ptr<ProjectClip> clip = binModel->getClipByBinID(binId);
@@ -117,6 +105,7 @@ TEST_CASE("Effects stack", "[Effects]")
         REQUIRE(clipModel->rowCount() == 0);
         REQUIRE(splitModel->rowCount() == 1);
     }
-    binModel->clean();
-    pCore->m_projectManager = nullptr;
+    timeline.reset();
+    clip.reset();
+    pCore->projectManager()->closeCurrentDocument(false, false);
 }

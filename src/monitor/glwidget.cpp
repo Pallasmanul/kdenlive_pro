@@ -12,14 +12,6 @@
     SPDX-License-Identifier: BSD-3-Clause
 */
 
-#include <KDeclarative/KDeclarative>
-#include <kdeclarative_version.h>
-#if KDECLARATIVE_VERSION >= QT_VERSION_CHECK(5, 98, 0)
-#include <KQuickIconProvider>
-#endif
-#include <KLocalizedContext>
-#include <KLocalizedString>
-#include <KMessageBox>
 #include <QApplication>
 #include <QFontDatabase>
 #include <QOpenGLContext>
@@ -27,7 +19,21 @@
 #include <QPainter>
 #include <QQmlContext>
 #include <QQuickItem>
+#include <QtGlobal>
 #include <memory>
+
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+#include "kdeclarative_version.h"
+#endif
+#if QT_VERSION > QT_VERSION_CHECK(6, 0, 0) || KDECLARATIVE_VERSION > QT_VERSION_CHECK(5, 98, 0)
+#include <KQuickIconProvider>
+#else
+#include <KDeclarative/KDeclarative>
+#endif
+#include <KLocalizedContext>
+#include <KLocalizedString>
+#include <KMessageBox>
+
 
 #include "bin/model/markersortmodel.h"
 #include "core.h"
@@ -106,12 +112,12 @@ GLWidget::GLWidget(int id, QWidget *parent)
     , m_openGLSync(false)
     , m_ClientWaitSync(nullptr)
 {
-#if KDECLARATIVE_VERSION < QT_VERSION_CHECK(5, 98, 0)
+#if QT_VERSION > QT_VERSION_CHECK(6, 0, 0) || KDECLARATIVE_VERSION > QT_VERSION_CHECK(5, 98, 0)
+    engine()->addImageProvider(QStringLiteral("icon"), new KQuickIconProvider);
+#else
     KDeclarative::KDeclarative kdeclarative;
     kdeclarative.setDeclarativeEngine(engine());
     kdeclarative.setupEngine(engine());
-#else
-    engine()->addImageProvider(QStringLiteral("icon"), new KQuickIconProvider);
 #endif
     engine()->rootContext()->setContextObject(new KLocalizedContext(this));
 
@@ -146,7 +152,7 @@ GLWidget::GLWidget(int id, QWidget *parent)
 
     m_refreshTimer.setSingleShot(true);
     m_refreshTimer.setInterval(10);
-    m_blackClip.reset(new Mlt::Producer(*pCore->getProjectProfile(), "color:0"));
+    m_blackClip.reset(new Mlt::Producer(pCore->getProjectProfile(), "color:0"));
     m_blackClip->set("mlt_image_format", "rgba");
     m_blackClip->set("kdenlive:id", "black");
     m_blackClip->set("out", 3);
@@ -515,7 +521,7 @@ bool GLWidget::initGPUAccel()
 {
     if (!KdenliveSettings::gpu_accel()) return false;
 
-    m_glslManager = new Mlt::Filter(*pCore->getProjectProfile(), "glsl.manager");
+    m_glslManager = new Mlt::Filter(pCore->getProjectProfile(), "glsl.manager");
     return m_glslManager->is_valid();
 }
 
@@ -973,7 +979,7 @@ int GLWidget::setProducer(const QString &file)
     if (m_producer) {
         m_producer.reset();
     }
-    m_producer = std::make_shared<Mlt::Producer>(new Mlt::Producer(*pCore->getProjectProfile(), nullptr, file.toUtf8().constData()));
+    m_producer = std::make_shared<Mlt::Producer>(new Mlt::Producer(pCore->getProjectProfile(), nullptr, file.toUtf8().constData()));
     if (!m_producer || !m_producer->is_valid()) {
         m_producer.reset();
         m_producer = m_blackClip;
@@ -1182,7 +1188,7 @@ int GLWidget::reconfigure()
                 m_consumer->set("audio_driver", audioDriver.toUtf8().constData());
             }
         }
-        if (!pCore->getProjectProfile()->progressive()) {
+        if (!pCore->getProjectProfile().progressive()) {
             m_consumer->set("progressive", KdenliveSettings::monitor_progressive());
         }
         m_consumer->set("volume", volume / 100.0);
@@ -1198,7 +1204,7 @@ int GLWidget::reconfigure()
         */
         int fps = qRound(pCore->getCurrentFps());
         m_consumer->set("buffer", qMax(25, fps));
-        m_consumer->set("prefill", qMax(1, fps / 25));
+        m_consumer->set("prefill", 6);
         m_consumer->set("drop_max", fps / 4);
         if (KdenliveSettings::audio_scrub()) {
             m_consumer->set("scrub_audio", 1);
@@ -1233,7 +1239,7 @@ void GLWidget::reloadProfile()
         m_consumer.reset();
         existingConsumer = true;
     }
-    m_blackClip.reset(new Mlt::Producer(*pCore->getProjectProfile(), "color:0"));
+    m_blackClip.reset(new Mlt::Producer(pCore->getProjectProfile(), "color:0"));
     m_blackClip->set("kdenlive:id", "black");
     m_blackClip->set("mlt_image_format", "rgba");
     if (existingConsumer) {
@@ -1561,7 +1567,10 @@ void FrameRenderer::pipelineSyncToFrame(Mlt::Frame &frame)
     // On Windows, use QOpenGLFunctions_3_2_Core instead of getProcAddress.
     // TODO: move to initialization of m_ClientWaitSync
     if (!m_gl32) {
+#if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
+        // TODO: Qt6
         m_gl32 = m_context->versionFunctions<QOpenGLFunctions_3_2_Core>();
+#endif
         if (m_gl32) {
             m_gl32->initializeOpenGLFunctions();
         }
@@ -1589,20 +1598,24 @@ void GLWidget::refreshSceneLayout()
     rootObject()->setProperty("scaley", double(m_rect.height() * m_zoom) / s.height());
 }
 
-void GLWidget::switchPlay(bool play, int offset, double speed)
+bool GLWidget::switchPlay(bool play, double speed)
 {
     if (!m_producer || !m_consumer) {
-        return;
+        return false;
     }
     if (m_isZoneMode || m_isLoopMode) {
         resetZoneMode();
     }
     if (play) {
-        if ((m_id == Kdenlive::ClipMonitor || (m_id == Kdenlive::ProjectMonitor && KdenliveSettings::jumptostart())) &&
-            m_consumer->position() == m_producer->get_out() - offset && speed > 0) {
-            m_producer->seek(0);
+        if (m_consumer->position() == m_producer->get_playtime() - 1 && speed > 0) {
+            // We are at the end of the clip / timeline
+            if (m_id == Kdenlive::ClipMonitor || (m_id == Kdenlive::ProjectMonitor && KdenliveSettings::jumptostart())) {
+                m_producer->seek(0);
+            } else {
+                return false;
+            }
         }
-        qDebug() << "pos: " << m_consumer->position() << "out-offset: " << m_producer->get_out() - offset;
+        qDebug() << "pos: " << m_consumer->position() << "out: " << m_producer->get_playtime() - 1;
         double current_speed = m_producer->get_speed();
         m_producer->set_speed(speed);
         m_proxy->setSpeed(speed);
@@ -1630,6 +1643,7 @@ void GLWidget::switchPlay(bool play, int offset, double speed)
         m_consumer->start();
         m_consumer->set("scrub_audio", 0);
     }
+    return true;
 }
 
 bool GLWidget::playZone(bool loop)
@@ -1638,15 +1652,26 @@ bool GLWidget::playZone(bool loop)
         pCore->displayMessage(i18n("Select a zone to play"), ErrorMessage, 500);
         return false;
     }
-    m_producer->seek(m_proxy->zoneIn());
+    double current_speed = m_producer->get_speed();
     m_producer->set_speed(0);
     m_proxy->setSpeed(0);
-    m_consumer->purge();
     m_loopOut = m_proxy->zoneOut();
-    m_producer->set_speed(1.0);
-    restartConsumer();
-    m_consumer->set("scrub_audio", 0);
-    m_consumer->set("refresh", 1);
+    m_loopIn = m_proxy->zoneIn();
+    if (qFuzzyIsNull(current_speed)) {
+        m_producer->seek(m_proxy->zoneIn());
+        m_consumer->start();
+        m_producer->set_speed(1.0);
+        m_consumer->set("scrub_audio", 0);
+        m_consumer->set("refresh", 1);
+        m_consumer->set("volume", KdenliveSettings::volume() / 100.);
+    } else {
+        // Speed change, purge to reduce latency
+        m_consumer->set("refresh", 0);
+        m_producer->seek(m_loopIn);
+        m_consumer->purge();
+        m_producer->set_speed(1.0);
+        m_consumer->set("refresh", 1);
+    }
     m_isZoneMode = true;
     m_isLoopMode = loop;
     return true;
@@ -1675,15 +1700,24 @@ bool GLWidget::loopClip(QPoint inOut)
         return false;
     }
     m_loopIn = inOut.x();
-    m_producer->seek(inOut.x());
+    double current_speed = m_producer->get_speed();
     m_producer->set_speed(0);
     m_proxy->setSpeed(0);
-    m_consumer->purge();
     m_loopOut = inOut.y();
-    m_producer->set_speed(1.0);
-    restartConsumer();
-    m_consumer->set("scrub_audio", 0);
-    m_consumer->set("refresh", 1);
+    if (qFuzzyIsNull(current_speed)) {
+        m_producer->seek(m_loopIn);
+        m_consumer->start();
+        m_consumer->set("scrub_audio", 0);
+        m_consumer->set("refresh", 1);
+        m_consumer->set("volume", KdenliveSettings::volume() / 100.);
+    } else {
+        // Speed change, purge to reduce latency
+        m_consumer->set("refresh", 0);
+        m_consumer->purge();
+        m_producer->seek(m_loopIn);
+        m_producer->set_speed(1.0);
+        m_consumer->set("refresh", 1);
+    }
     m_isZoneMode = false;
     m_isLoopMode = true;
     return true;

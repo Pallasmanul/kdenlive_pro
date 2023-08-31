@@ -246,6 +246,11 @@
       <default>Lossy x264 I frame only</default>
     </entry>
 
+    <entry name="transcodingReplace" type="Bool">
+      <label>When transcoding a clip, replace it by the transcoding version in project.</label>
+      <default>false</default>
+    </entry>
+
     <entry name="previewextension" type="String">
       <label>File extension for timeline preview.</label>
       <default></default>
@@ -270,13 +275,13 @@
       <label>Enables vaapi hw accel in encoders.</label>
       <default>false</default>
     </entry>
-    <entry name="vaapiScalingEnabled" type="Bool">
-      <label>Enables scale_vaapi hw accel in encoders.</label>
+    <entry name="amfEnabled" type="Bool">
+      <label>Enables amf hw accel in encoders.</label>
       <default>false</default>
     </entry>
-    <entry name="nvencEnabled" type="Bool">
-      <label>Enables nvenc hw accel in encoders.</label>
-      <default>false</default>
+    <entry name="SupportedHWCodecs" type="StringList">
+      <label>Lists supported hw accel encoders.</label>
+      <default></default>
     </entry>
     <entry name="nvScalingEnabled" type="Bool">
       <label>Enables nvenc hw accel scaling.</label>
@@ -344,7 +349,10 @@
       <label>Normalize audio channels in thumbnails.</label>
       <default>true</default>
     </entry>
-
+    <entry name="autotrackheight" type="Bool">
+      <label>Adjust all tracks height to fit in view.</label>
+      <default>false</default>
+    </entry>
     <entry name="autoscroll" type="Bool">
       <label>Auto scroll timeline while playing.</label>
       <default>true</default>
@@ -517,7 +525,12 @@
       <default></default>
     </entry>
 
-    <entry name="rendererpath" type="Path">
+    <entry name="kdenliverendererpath" type="Path">
+      <label>Kdenlive renderer install path.</label>
+      <default></default>
+    </entry>
+
+    <entry name="meltpath" type="Path">
       <label>Mlt melt renderer install path.</label>
       <default></default>
     </entry>
@@ -1057,6 +1070,11 @@
       <default>false</default>
     </entry>
 
+    <entry name="subtitleEditFontSize" type="Double">
+      <label>Default font size for edit subtitle text widget.</label>
+      <default>0</default>
+    </entry>
+
     <entry name="thumbColor1" type="Color">
       <label>Color to draw even audio channels.</label>
       <default>#2ac1a0</default>
@@ -1070,11 +1088,6 @@
     <entry name="overlayColor" type="Color">
       <label>Color to draw the monitor overlay guides.</label>
       <default>#00ffff</default>
-    </entry>
-
-    <entry name="rescalekeepratio" type="Bool">
-      <label>Keep aspect ratio in render dialog rescale widget.</label>
-      <default>true</default>
     </entry>
 
     <entry name="defaultrescalewidth" type="Int">
@@ -1305,7 +1318,11 @@
            <default>cpu</default>
        </entry>
        <entry name="whisperTranslate" type="Bool">
-           <label>Translate speech detection to english</label>
+           <label>Translate speech detection to English</label>
+           <default>false</default>
+       </entry>
+       <entry name="whisperDisableFP16" type="Bool">
+           <label>Disable FP16 in whisper engine</label>
            <default>false</default>
        </entry>
        <entry name="whisperExtra" type="String">
@@ -1317,4 +1334,14 @@
            <default></default>
        </entry>
    </group>
+    <group name="Media Browser">
+    <entry name="mediaIconSize" type="Int">
+      <label>Default size for media browser icons.</label>
+      <default>16</default>
+    </entry>
+    <entry name="mediaDoubleClickImport" type="Bool">
+      <label>Show inline preview in media browser.</label>
+      <default>true</default>
+    </entry>
+    </group>
 </kcfg>

@@ -108,7 +108,8 @@ public:
     /** @brief Open a timeline clip in a tab.
      *  @returns true if the timeline was not previously opened
      */
-    bool openTimeline(const QString &id, const QUuid &uuid, int position = -1);
+    bool openTimeline(const QString &id, const QUuid &uuid, int position = -1, bool duplicate = false,
+                      std::shared_ptr<TimelineItemModel> existingModel = nullptr);
     /** @brief Set a property on timeline uuid
      */
     void setTimelinePropery(QUuid uuid, const QString &prop, const QString &val);
@@ -119,10 +120,10 @@ public:
     void activateDocument(const QUuid &uuid);
     /** @brief Close a timeline tab through its uuid
      */
-    bool closeTimeline(const QUuid &uuid, bool onDeletion = false);
+    bool closeTimeline(const QUuid &uuid, bool onDeletion = false, bool clearUndo = true);
     /** @brief Update a timeline sequence before saving or extracting xml
      */
-    void syncTimeline(const QUuid &uuid);
+    void syncTimeline(const QUuid &uuid, bool refresh = false);
     void setActiveTimeline(const QUuid &uuid);
 
 public Q_SLOTS:
@@ -150,7 +151,7 @@ public Q_SLOTS:
      * @param outputFileName The URL to save to / The document's URL.
      * @param saveACopy Default is false. If true, the file will be saved but isn’t opened afterwards. Besides no autosave version will be created
      * @return Whether we had success. */
-    bool saveFileAs(const QString &outputFileName, bool saveACopy = false);
+    bool saveFileAs(const QString &outputFileName, bool saveOverExistingFile = true, bool saveACopy = false);
 
     /** @brief Close currently opened document. Returns false if something went wrong (cannot save modifications, ...). */
     bool closeCurrentDocument(bool saveChanges = true, bool quit = false);
@@ -208,6 +209,8 @@ public Q_SLOTS:
 
 private Q_SLOTS:
     void slotRevert();
+    /** @brief A timeline sequence duration changed, update our properties. */
+    void updateSequenceDuration(const QUuid &uuid);
     /** @brief Open the project's backupdialog. */
     bool slotOpenBackup(const QUrl &url = QUrl());
     /** @brief Start autosaving the document. */
@@ -221,11 +224,13 @@ Q_SIGNALS:
 
 protected:
     /** @brief Update the timeline according to the MLT XML */
-    bool updateTimeline(int pos, bool createNewTab, const QString &chunks, const QString &dirty, const QDateTime &documentDate, bool enablePreview);
+    bool updateTimeline(bool createNewTab, const QString &chunks, const QString &dirty, const QDateTime &documentDate, bool enablePreview);
 
 private:
     /** @brief checks if autoback files exists, recovers from it if user says yes, returns true if files were recovered. */
     bool checkForBackupFile(const QUrl &url, bool newFile = false);
+    /** @brief Update the sequence producer stored in the project model. */
+    void updateSequenceProducer(const QUuid &uuid, std::shared_ptr<Mlt::Producer> prod);
 
     KdenliveDoc *m_project{nullptr};
     std::shared_ptr<TimelineItemModel> m_activeTimelineModel;

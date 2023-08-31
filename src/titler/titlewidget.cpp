@@ -426,11 +426,7 @@ TitleWidget::TitleWidget(const QUrl &url, QString projectTitlePath, Monitor *mon
     m_buttonDownload->setShortcut(Qt::ALT | Qt::Key_D);
     m_buttonDownload->setToolTip(i18n("Download New Title Templates...") + QLatin1Char(' ') + m_buttonDownload->shortcut().toString());
     m_toolbar->addAction(m_buttonDownload);
-#if KNEWSTUFFWIDGETS_ENABLE_DEPRECATED_SINCE(5, 90)
-    connect(m_buttonDownload, &KNSWidgets::Action::dialogFinished, this, [&](const KNS3::Entry::List &changedEntries) {
-#else
     connect(m_buttonDownload, &KNSWidgets::Action::dialogFinished, this, [&](const QList<KNSCore::Entry> &changedEntries) {
-#endif
         if (changedEntries.count() > 0) {
             refreshTitleTemplates(m_projectTitlePath);
             refreshTemplateBoxContents();
@@ -636,8 +632,9 @@ QStringList TitleWidget::extractImageList(const QString &xml)
     doc.setContent(xml);
     QDomNodeList images = doc.elementsByTagName(QStringLiteral("content"));
     for (int i = 0; i < images.count(); ++i) {
-        if (images.at(i).toElement().hasAttribute(QStringLiteral("url"))) {
-            result.append(images.at(i).toElement().attribute(QStringLiteral("url")));
+        QDomElement image = images.at(i).toElement();
+        if (image.hasAttribute(QStringLiteral("url"))) {
+            result.append(image.attribute(QStringLiteral("url")));
         }
     }
     return result;
@@ -652,10 +649,11 @@ QStringList TitleWidget::extractFontList(const QString &xml)
     }
     QDomDocument doc;
     doc.setContent(xml);
-    QDomNodeList images = doc.elementsByTagName(QStringLiteral("content"));
-    for (int i = 0; i < images.count(); ++i) {
-        if (images.at(i).toElement().hasAttribute(QStringLiteral("font"))) {
-            result.append(images.at(i).toElement().attribute(QStringLiteral("font")));
+    QDomNodeList elements = doc.elementsByTagName(QStringLiteral("content"));
+    for (int i = 0; i < elements.count(); ++i) {
+        QDomElement element = elements.at(i).toElement();
+        if (element.hasAttribute(QStringLiteral("font"))) {
+            result.append(element.attribute(QStringLiteral("font")));
         }
     }
     return result;

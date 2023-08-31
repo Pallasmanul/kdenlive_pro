@@ -27,7 +27,7 @@ Rectangle {
     property color textColor: activePalette.text
     property var groupTrimData
     property bool trimInProgress: false
-    property bool dragInProgress: dragProxyArea.pressed || dragProxyArea.drag.active || groupTrimData !== undefined || spacerGroup > -1 || trimInProgress
+    property bool dragInProgress: dragProxyArea.pressed || dragProxyArea.drag.active || groupTrimData !== undefined || spacerGroup > -1 || trimInProgress || clipDropArea.containsDrag
     property int trimmingOffset: 0
     property int trimmingClickFrame: -1
     Timer {
@@ -124,6 +124,7 @@ Rectangle {
         root.textColor = activePalette.text
         playhead.fillColor = activePalette.windowText
         ruler.dimmedColor = (activePalette.text.r + activePalette.text.g + activePalette.text.b > 1.5) ? Qt.darker(activePalette.text, 1.3) : Qt.lighter(activePalette.text, 1.3)
+        ruler.dimmedColor2 = (activePalette.text.r + activePalette.text.g + activePalette.text.b > 1.5) ? Qt.darker(activePalette.text, 2.2) : Qt.lighter(activePalette.text, 2.2)
         ruler.repaintRuler()
         // Disable caching for track header icons
         root.paletteUnchanged = false
@@ -225,6 +226,8 @@ Rectangle {
 
     function continuousScrolling(x, y) {
         // This provides continuous scrolling at the left/right edges.
+        var maxScroll = trackHeaders.height - tracksArea.height + horZoomBar.height + ruler.height + subtitleTrack.height
+        y = Math.min(y, maxScroll)
         y += ruler.height + subtitleTrack.height
         if (x > scrollView.contentX + scrollView.width - root.baseUnit * 3) {
             scrollTimer.horizontal = root.baseUnit
@@ -452,6 +455,7 @@ Rectangle {
     property int collapsedHeight: Math.max(28, baseUnit * 1.8)
     property int minHeaderWidth: 6 * collapsedHeight
     property int headerWidth: Math.max(minHeaderWidth, timeline.headerWidth())
+    property bool autoTrackHeight: timeline.autotrackHeight
     property color selectedTrackColor: Qt.rgba(activePalette.highlight.r, activePalette.highlight.g, activePalette.highlight.b, 0.2)
     property color frameColor: Qt.rgba(activePalette.shadow.r, activePalette.shadow.g, activePalette.shadow.b, 0.5)
     property bool autoScrolling: timeline.autoScroll
@@ -491,6 +495,7 @@ Rectangle {
     property int copiedClip: -1
     property int zoomOnMouse: -1
     property bool zoomOnBar: false // Whether the scaling was done with the zoombar
+    property string addedSequenceName : controller.visibleSequenceName
     property int viewActiveTrack: timeline.activeTrack
     property int wheelAccumulatedDelta: 0
     readonly property int defaultDeltasPerStep: 120
@@ -508,12 +513,33 @@ Rectangle {
     property bool scrollVertically: timeline.scrollVertically
     property int spacerMinPos: 0
 
+    onAutoTrackHeightChanged: {
+        trackHeightTimer.stop()
+        if (root.autoTrackHeight) {
+            timeline.autofitTrackHeight(scrollView.height - subtitleTrack.height, root.collapsedHeight)
+        }
+    }
+
     onSeekingFinishedChanged : {
         playhead.opacity = seekingFinished ? 1 : 0.5
     }
 
     onShowSubtitlesChanged: {
         subtitleTrack.height = showSubtitles? root.baseUnit * 5 : 0
+        if (root.autoTrackHeight) {
+            timeline.autofitTrackHeight(scrollView.height - subtitleTrack.height, root.collapsedHeight)
+        }
+    }
+    Timer {
+        id: trackHeightTimer
+        interval: 300; running: false; repeat: false
+        onTriggered: timeline.autofitTrackHeight(scrollView.height - subtitleTrack.height, root.collapsedHeight)
+    }
+
+    onHeightChanged: {
+        if (root.autoTrackHeight) {
+            trackHeightTimer.restart()
+        }
     }
 
     //onCurrentTrackChanged: timeline.selection = []
@@ -949,7 +975,7 @@ Rectangle {
                 width: parent.width
                 height: ruler.height
                 Button {
-                    text: parent.width > metrics.boundingRect.width * 1.4 ? metrics.text : i18nc("Initial for Master", "M")
+                    text: metrics.elidedText
                     font: miniFont
                     flat: true
                     anchors.fill: parent
@@ -961,7 +987,10 @@ Rectangle {
                     ToolTip.text: i18n("Show master effects")
                     TextMetrics {
                         id: metrics
-                        text: i18n("Master")
+                        font: miniFont
+                        elide: Text.ElideRight
+                        elideWidth: root.headerWidth * 0.8
+                        text: root.addedSequenceName.length == 0 ? i18n("Master") : root.addedSequenceName
                     }
                     onClicked: {
                         timeline.showMasterEffects()
@@ -1178,6 +1207,12 @@ Rectangle {
                     Repeater {
                         id: trackHeaderRepeater
                         model: multitrack
+                        property int tracksCount: count
+                        onTracksCountChanged: {
+                            if (root.autoTrackHeight) {
+                                trackHeightTimer.restart()
+                            }
+                        }
                         TrackHead {
                             trackName: model.name
                             thumbsFormat: model.thumbsFormat
@@ -1315,8 +1350,12 @@ Rectangle {
                         timeline.requestStartTrimmingMode(mainClip.clipId, shiftPress)
                     }
                     if (dragProxy.draggedItem > -1 && mouse.y > ruler.height) {
-                        mouse.accepted = false
-                        return
+                        // Check if the mouse exit event was not correctly triggered on the draggeditem
+                        regainFocus(tracksArea.mapToItem(root,mouseX, mouseY))
+                        if (dragProxy.draggedItem > -1) {
+                            mouse.accepted = false
+                            return
+                        }
                     }
                     if (root.activeTool === ProjectTool.SpacerTool && mouse.y > ruler.height) {
                         // spacer tool

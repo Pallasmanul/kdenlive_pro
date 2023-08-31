@@ -6,6 +6,7 @@ SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
 #include "core.h"
 #include "audiomixer/mixermanager.hpp"
 #include "bin/bin.h"
+#include "bin/mediabrowser.h"
 #include "bin/projectitemmodel.h"
 #include "capture/mediacapture.h"
 #include "dialogs/proxytest.h"
@@ -46,9 +47,7 @@ Core::Core(const QString &packageType)
     : audioThumbCache(QStringLiteral("audioCache"), 2000000)
     , taskManager(this)
     , m_packageType(packageType)
-    , m_thumbProfile(nullptr)
     , m_capture(new MediaCapture(this))
-    , m_currentProfile(QStringLiteral("atsc_720p_25"))
 {
 }
 
@@ -127,13 +126,12 @@ bool Core::build(const QString &packageType, bool testMode)
     }
 
     m_self->m_projectItemModel = ProjectItemModel::construct();
+    m_self->m_projectManager = new ProjectManager(m_self.get());
     return true;
 }
 
 void Core::initGUI(bool inSandbox, const QString &MltPath, const QUrl &Url, const QString &clipsToLoad)
 {
-    m_profile = KdenliveSettings::default_profile();
-    m_currentProfile = m_profile;
     m_mainWindow = new MainWindow();
 #if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
 
@@ -148,7 +146,6 @@ void Core::initGUI(bool inSandbox, const QString &MltPath, const QUrl &Url, cons
 
     connect(this, &Core::showConfigDialog, m_mainWindow, &MainWindow::slotShowPreferencePage);
 
-    m_projectManager = new ProjectManager(this);
     Bin *bin = new Bin(m_projectItemModel, m_mainWindow);
     m_mainWindow->addBin(bin);
 
@@ -164,6 +161,10 @@ void Core::initGUI(bool inSandbox, const QString &MltPath, const QUrl &Url, cons
     connect(m_projectItemModel.get(), &QAbstractItemModel::dataChanged, m_mainWindow->activeBin(), &Bin::slotItemEdited);
 
     m_monitorManager = new MonitorManager(this);
+    if (!Url.isEmpty()) {
+        Q_EMIT loadingMessageUpdated(i18n("Loading project…"));
+    }
+    projectManager()->init(Url, clipsToLoad);
 
     // The MLT Factory will be initiated there, all MLT classes will be usable only after this
     if (inSandbox) {
@@ -172,7 +173,7 @@ void Core::initGUI(bool inSandbox, const QString &MltPath, const QUrl &Url, cons
         KdenliveSettings::setFfmpegpath(QDir::cleanPath(appPath + QStringLiteral("/ffmpeg")));
         KdenliveSettings::setFfplaypath(QDir::cleanPath(appPath + QStringLiteral("/ffplay")));
         KdenliveSettings::setFfprobepath(QDir::cleanPath(appPath + QStringLiteral("/ffprobe")));
-        KdenliveSettings::setRendererpath(QDir::cleanPath(appPath + QStringLiteral("/melt")));
+        KdenliveSettings::setMeltpath(QDir::cleanPath(appPath + QStringLiteral("/melt")));
         m_mainWindow->init(QDir::cleanPath(appPath + QStringLiteral("/../share/mlt/profiles")));
     } else {
         // Open connection with Mlt
@@ -188,7 +189,9 @@ void Core::initGUI(bool inSandbox, const QString &MltPath, const QUrl &Url, cons
         m_profile = ProjectManager::getDefaultProjectFormat();
         KdenliveSettings::setDefault_profile(m_profile);
     }
+    setCurrentProfile(m_profile);
     profileChanged();
+    resetThumbProfile();
 
     if (!ProfileRepository::get()->profileExists(m_profile)) {
         KMessageBox::error(m_mainWindow, i18n("The default profile of Kdenlive is not set or invalid, press OK to set it to a correct value."));
@@ -227,10 +230,6 @@ void Core::initGUI(bool inSandbox, const QString &MltPath, const QUrl &Url, cons
     ClipController::mediaUnavailable = std::make_shared<Mlt::Producer>(ProfileRepository::get()->getProfile(m_self->m_profile)->profile(), "color:blue");
     ClipController::mediaUnavailable->set("length", 99999999);
 
-    if (!Url.isEmpty()) {
-        Q_EMIT loadingMessageUpdated(i18n("Loading project…"));
-    }
-    projectManager()->init(Url, clipsToLoad);
     if (qApp->isSessionRestored()) {
         // NOTE: we are restoring only one window, because Kdenlive only uses one MainWindow
         m_mainWindow->restore(1, false);
@@ -250,6 +249,9 @@ void Core::buildDocks()
     connect(m_mixerWidget, &MixerManager::updateRecVolume, m_capture.get(), &MediaCapture::setAudioVolume);
     connect(m_monitorManager, &MonitorManager::cleanMixer, m_mixerWidget, &MixerManager::clearMixers);
     m_mixerWidget->checkAudioLevelVersion();
+
+    // Media Browser
+    m_mediaBrowser = new MediaBrowser(m_mainWindow);
 
     // Library
     m_library = new LibraryWidget(m_projectManager, m_mainWindow);
@@ -440,6 +442,14 @@ void Core::seekMonitor(int id, int position)
     }
 }
 
+MediaBrowser *Core::mediaBrowser()
+{
+    if (!m_mainWindow) {
+        return nullptr;
+    }
+    return m_mediaBrowser;
+}
+
 Bin *Core::bin()
 {
     if (!m_mainWindow) {
@@ -535,25 +545,20 @@ Mlt::Profile &Core::getMonitorProfile()
     return m_monitorProfile;
 }
 
-Mlt::Profile *Core::getProjectProfile()
+Mlt::Profile &Core::getProjectProfile()
 {
-    if (!m_projectProfile) {
-        m_projectProfile = std::make_unique<Mlt::Profile>(m_currentProfile.toUtf8().constData());
-        m_projectProfile->set_explicit(true);
-        updateMonitorProfile();
-    }
-    return m_projectProfile.get();
+    return m_projectProfile;
 }
 
 void Core::updateMonitorProfile()
 {
-    m_monitorProfile.set_colorspace(m_projectProfile->colorspace());
-    m_monitorProfile.set_frame_rate(m_projectProfile->frame_rate_num(), m_projectProfile->frame_rate_den());
-    m_monitorProfile.set_width(m_projectProfile->width());
-    m_monitorProfile.set_height(m_projectProfile->height());
-    m_monitorProfile.set_progressive(m_projectProfile->progressive());
-    m_monitorProfile.set_sample_aspect(m_projectProfile->sample_aspect_num(), m_projectProfile->sample_aspect_den());
-    m_monitorProfile.set_display_aspect(m_projectProfile->display_aspect_num(), m_projectProfile->display_aspect_den());
+    m_monitorProfile.set_colorspace(m_projectProfile.colorspace());
+    m_monitorProfile.set_frame_rate(m_projectProfile.frame_rate_num(), m_projectProfile.frame_rate_den());
+    m_monitorProfile.set_width(m_projectProfile.width());
+    m_monitorProfile.set_height(m_projectProfile.height());
+    m_monitorProfile.set_progressive(m_projectProfile.progressive());
+    m_monitorProfile.set_sample_aspect(m_projectProfile.sample_aspect_num(), m_projectProfile.sample_aspect_den());
+    m_monitorProfile.set_display_aspect(m_projectProfile.display_aspect_num(), m_projectProfile.display_aspect_den());
     m_monitorProfile.set_explicit(true);
     Q_EMIT monitorProfileUpdated();
 }
@@ -572,30 +577,33 @@ bool Core::setCurrentProfile(const QString profilePath)
         return true;
     }
     if (ProfileRepository::get()->profileExists(profilePath)) {
+        // Ensure all running tasks are stopped before attempting a global profile change
+        taskManager.slotCancelJobs();
         m_currentProfile = profilePath;
-        m_thumbProfile.reset();
-        if (m_projectProfile) {
-            m_projectProfile->set_colorspace(getCurrentProfile()->colorspace());
-            m_projectProfile->set_frame_rate(getCurrentProfile()->frame_rate_num(), getCurrentProfile()->frame_rate_den());
-            m_projectProfile->set_height(getCurrentProfile()->height());
-            m_projectProfile->set_progressive(getCurrentProfile()->progressive());
-            m_projectProfile->set_sample_aspect(getCurrentProfile()->sample_aspect_num(), getCurrentProfile()->sample_aspect_den());
-            m_projectProfile->set_display_aspect(getCurrentProfile()->display_aspect_num(), getCurrentProfile()->display_aspect_den());
-            m_projectProfile->set_width(getCurrentProfile()->width());
-            m_projectProfile->get_profile()->description = qstrdup(getCurrentProfile()->description().toUtf8().constData());
-            m_projectProfile->set_explicit(true);
-            updateMonitorProfile();
-        }
+        std::unique_ptr<ProfileModel> &currentProfile = getCurrentProfile();
+        m_projectProfile.set_colorspace(currentProfile->colorspace());
+        m_projectProfile.set_frame_rate(currentProfile->frame_rate_num(), currentProfile->frame_rate_den());
+        m_projectProfile.set_height(currentProfile->height());
+        m_projectProfile.set_progressive(currentProfile->progressive());
+        m_projectProfile.set_sample_aspect(currentProfile->sample_aspect_num(), currentProfile->sample_aspect_den());
+        m_projectProfile.set_display_aspect(currentProfile->display_aspect_num(), currentProfile->display_aspect_den());
+        m_projectProfile.set_width(currentProfile->width());
+        free(m_projectProfile.get_profile()->description);
+        m_projectProfile.get_profile()->description = strdup(currentProfile->description().toUtf8().constData());
+        m_projectProfile.set_explicit(true);
+        updateMonitorProfile();
+        // Regenerate thumbs profile
+        resetThumbProfile();
         // inform render widget
-        m_timecode.setFormat(getCurrentProfile()->fps());
+        m_timecode.setFormat(currentProfile->fps());
         profileChanged();
         if (m_guiConstructed) {
             Q_EMIT m_mainWindow->updateRenderWidgetProfile();
             m_monitorManager->resetProfiles();
             Q_EMIT m_monitorManager->updatePreviewScaling();
             if (m_mainWindow->hasTimeline() && m_mainWindow->getCurrentTimeline() && m_mainWindow->getCurrentTimeline()->model()) {
-                m_mainWindow->getCurrentTimeline()->model()->updateProfile(getProjectProfile());
-                m_mainWindow->getCurrentTimeline()->model()->updateFieldOrderFilter(getCurrentProfile());
+                // m_mainWindow->getCurrentTimeline()->model()->updateProfile(getProjectProfile());
+                m_mainWindow->getCurrentTimeline()->model()->updateFieldOrderFilter(currentProfile);
                 checkProfileValidity();
                 Q_EMIT m_mainWindow->getCurrentTimeline()->controller()->frameFormatChanged();
             }
@@ -608,7 +616,7 @@ bool Core::setCurrentProfile(const QString profilePath)
 
 void Core::checkProfileValidity()
 {
-    int offset = (getProjectProfile()->width() % 2) + (getProjectProfile()->height() % 2);
+    int offset = (getProjectProfile().width() % 2) + (getProjectProfile().height() % 2);
     if (offset > 0) {
         // Profile is broken, warn user
         if (m_mainWindow->getBin()) {
@@ -644,14 +652,14 @@ QSize Core::getCurrentFrameSize() const
 
 void Core::refreshProjectMonitorOnce()
 {
-    if (!m_guiConstructed) return;
+    if (!m_guiConstructed || currentDoc()->loading || currentDoc()->closing) return;
     m_monitorManager->refreshProjectMonitor();
 }
 
 void Core::refreshProjectRange(QPair<int, int> range)
 {
-    if (!m_guiConstructed) return;
-    m_monitorManager->refreshProjectRange(range);
+    if (!m_guiConstructed || currentDoc()->loading || currentDoc()->closing) return;
+    m_monitorManager->refreshProjectRange(range, true);
 }
 
 const QSize Core::getCompositionSizeOnTrack(const ObjectId &id)
@@ -675,21 +683,20 @@ QPair<int, QString> Core::currentTrackInfo() const
 
 int Core::getItemPosition(const ObjectId &id)
 {
-    if (!m_guiConstructed) return 0;
-    switch (id.first) {
+    switch (id.type) {
     case ObjectType::TimelineClip:
-        if (m_mainWindow->getCurrentTimeline()->model()->isClip(id.second)) {
-            return m_mainWindow->getCurrentTimeline()->model()->getClipPosition(id.second);
+        if (currentDoc()->getTimeline(id.uuid)->isClip(id.itemId)) {
+            return currentDoc()->getTimeline(id.uuid)->getClipPosition(id.itemId);
         }
         break;
     case ObjectType::TimelineComposition:
-        if (m_mainWindow->getCurrentTimeline()->model()->isComposition(id.second)) {
-            return m_mainWindow->getCurrentTimeline()->model()->getCompositionPosition(id.second);
+        if (currentDoc()->getTimeline(id.uuid)->isComposition(id.itemId)) {
+            return currentDoc()->getTimeline(id.uuid)->getCompositionPosition(id.itemId);
         }
         break;
     case ObjectType::TimelineMix:
-        if (m_mainWindow->getCurrentTimeline()->model()->isClip(id.second)) {
-            return m_mainWindow->getCurrentTimeline()->model()->getMixInOut(id.second).first;
+        if (currentDoc()->getTimeline(id.uuid)->isClip(id.itemId)) {
+            return currentDoc()->getTimeline(id.uuid)->getMixInOut(id.itemId).first;
         } else {
             qWarning() << "querying non clip properties";
         }
@@ -706,14 +713,10 @@ int Core::getItemPosition(const ObjectId &id)
 
 int Core::getItemIn(const ObjectId &id)
 {
-    if (!m_guiConstructed || !m_mainWindow->getCurrentTimeline() || !m_mainWindow->getCurrentTimeline()->model()) {
-        qWarning() << "GUI not build";
-        return 0;
-    }
-    switch (id.first) {
+    switch (id.type) {
     case ObjectType::TimelineClip:
-        if (m_mainWindow->getCurrentTimeline()->model()->isClip(id.second)) {
-            return m_mainWindow->getCurrentTimeline()->model()->getClipIn(id.second);
+        if (currentDoc()->getTimeline(id.uuid)->isClip(id.itemId)) {
+            return currentDoc()->getTimeline(id.uuid)->getClipIn(id.itemId);
         } else {
             qWarning() << "querying non clip properties";
         }
@@ -736,10 +739,10 @@ int Core::getItemIn(const QUuid &uuid, const ObjectId &id)
         qWarning() << "GUI not build";
         return 0;
     }
-    switch (id.first) {
+    switch (id.type) {
     case ObjectType::TimelineClip:
-        if (currentDoc()->getTimeline(uuid)->isClip(id.second)) {
-            return currentDoc()->getTimeline(uuid)->getClipIn(id.second);
+        if (currentDoc()->getTimeline(uuid)->isClip(id.itemId)) {
+            return currentDoc()->getTimeline(uuid)->getClipIn(id.itemId);
         } else {
             qWarning() << "querying non clip properties";
         }
@@ -758,19 +761,19 @@ int Core::getItemIn(const QUuid &uuid, const ObjectId &id)
 
 PlaylistState::ClipState Core::getItemState(const ObjectId &id)
 {
-    if (!m_guiConstructed) return PlaylistState::Disabled;
-    switch (id.first) {
+    switch (id.type) {
     case ObjectType::TimelineClip:
-        if (m_mainWindow->getCurrentTimeline()->model()->isClip(id.second)) {
-            return m_mainWindow->getCurrentTimeline()->model()->getClipState(id.second);
+        if (currentDoc()->getTimeline(id.uuid)->isClip(id.itemId)) {
+            return currentDoc()->getTimeline(id.uuid)->getClipState(id.itemId);
         }
         break;
     case ObjectType::TimelineComposition:
         return PlaylistState::VideoOnly;
     case ObjectType::BinClip:
-        return m_mainWindow->getBin()->getClipState(id.second);
+        if (!m_guiConstructed) return PlaylistState::Disabled;
+        return m_mainWindow->getBin()->getClipState(id.itemId);
     case ObjectType::TimelineTrack:
-        return m_mainWindow->getCurrentTimeline()->model()->isAudioTrack(id.second) ? PlaylistState::AudioOnly : PlaylistState::VideoOnly;
+        return currentDoc()->getTimeline(id.uuid)->isAudioTrack(id.itemId) ? PlaylistState::AudioOnly : PlaylistState::VideoOnly;
     case ObjectType::Master:
         return PlaylistState::Disabled;
     default:
@@ -782,47 +785,47 @@ PlaylistState::ClipState Core::getItemState(const ObjectId &id)
 
 int Core::getItemDuration(const ObjectId &id)
 {
-    if (!m_guiConstructed) return 0;
-    switch (id.first) {
+    switch (id.type) {
     case ObjectType::TimelineClip:
-        if (m_mainWindow->getCurrentTimeline()->model()->isClip(id.second)) {
-            return m_mainWindow->getCurrentTimeline()->model()->getClipPlaytime(id.second);
+        if (currentDoc()->getTimeline(id.uuid)->isClip(id.itemId)) {
+            return currentDoc()->getTimeline(id.uuid)->getClipPlaytime(id.itemId);
         }
         break;
     case ObjectType::TimelineComposition:
-        if (m_mainWindow->getCurrentTimeline()->model()->isComposition(id.second)) {
-            return m_mainWindow->getCurrentTimeline()->model()->getCompositionPlaytime(id.second);
+        if (currentDoc()->getTimeline(id.uuid)->isComposition(id.itemId)) {
+            return currentDoc()->getTimeline(id.uuid)->getCompositionPlaytime(id.itemId);
         }
         break;
     case ObjectType::BinClip:
-        return int(m_mainWindow->getBin()->getClipDuration(id.second));
+        if (!m_guiConstructed) return 0;
+        return int(m_mainWindow->getBin()->getClipDuration(id.itemId));
     case ObjectType::TimelineTrack:
     case ObjectType::Master:
-        return m_mainWindow->getCurrentTimeline()->controller()->duration() - 1;
+        return currentDoc()->getTimeline(id.uuid)->duration();
     case ObjectType::TimelineMix:
-        if (m_mainWindow->getCurrentTimeline()->model()->isClip(id.second)) {
-            return m_mainWindow->getCurrentTimeline()->model()->getMixDuration(id.second);
+        if (currentDoc()->getTimeline(id.uuid)->isClip(id.itemId)) {
+            return currentDoc()->getTimeline(id.uuid)->getMixDuration(id.itemId);
         } else {
             qWarning() << "querying non clip properties";
         }
         break;
     default:
-        qWarning() << "unhandled object type: " << (int)id.first;
+        qWarning() << "unhandled object type: " << (int)id.type;
     }
     return 0;
 }
 
 QSize Core::getItemFrameSize(const ObjectId &id)
 {
-    if (!m_guiConstructed) return QSize();
-    switch (id.first) {
+    switch (id.type) {
     case ObjectType::TimelineClip:
-        if (m_mainWindow->getCurrentTimeline()->model()->isClip(id.second)) {
-            return m_mainWindow->getCurrentTimeline()->model()->getClipFrameSize(id.second);
+        if (currentDoc()->getTimeline(id.uuid)->isClip(id.itemId)) {
+            return currentDoc()->getTimeline(id.uuid)->getClipFrameSize(id.itemId);
         }
         break;
     case ObjectType::BinClip:
-        return m_mainWindow->getBin()->getFrameSize(id.second);
+        if (!m_guiConstructed) return QSize();
+        return m_mainWindow->getBin()->getFrameSize(id.itemId);
     case ObjectType::TimelineTrack:
     case ObjectType::Master:
     case ObjectType::TimelineComposition:
@@ -836,12 +839,11 @@ QSize Core::getItemFrameSize(const ObjectId &id)
 
 int Core::getItemTrack(const ObjectId &id)
 {
-    if (!m_guiConstructed) return 0;
-    switch (id.first) {
+    switch (id.type) {
     case ObjectType::TimelineClip:
     case ObjectType::TimelineComposition:
     case ObjectType::TimelineMix:
-        return m_mainWindow->getCurrentTimeline()->model()->getItemTrackId(id.second);
+        return currentDoc()->getTimeline(id.uuid)->getItemTrackId(id.itemId);
     default:
         qWarning() << "unhandled object type";
     }
@@ -850,21 +852,21 @@ int Core::getItemTrack(const ObjectId &id)
 
 void Core::refreshProjectItem(const ObjectId &id)
 {
-    if (!m_guiConstructed || !m_mainWindow->getCurrentTimeline() || m_mainWindow->getCurrentTimeline()->loading) return;
-    switch (id.first) {
+    if (!m_guiConstructed || (!id.uuid.isNull() && !m_mainWindow->getTimeline(id.uuid))) return;
+    switch (id.type) {
     case ObjectType::TimelineClip:
     case ObjectType::TimelineMix:
-        if (m_mainWindow->getCurrentTimeline()->model()->isClip(id.second)) {
-            m_mainWindow->getCurrentTimeline()->controller()->refreshItem(id.second);
+        if (currentDoc()->getTimeline(id.uuid)->isClip(id.itemId)) {
+            m_mainWindow->getTimeline(id.uuid)->controller()->refreshItem(id.itemId);
         }
         break;
     case ObjectType::TimelineComposition:
-        if (m_mainWindow->getCurrentTimeline()->model()->isComposition(id.second)) {
-            m_mainWindow->getCurrentTimeline()->controller()->refreshItem(id.second);
+        if (currentDoc()->getTimeline(id.uuid)->isComposition(id.itemId)) {
+            m_mainWindow->getTimeline(id.uuid)->controller()->refreshItem(id.itemId);
         }
         break;
     case ObjectType::TimelineTrack:
-        if (m_mainWindow->getCurrentTimeline()->model()->isTrack(id.second)) {
+        if (m_mainWindow->getTimeline(id.uuid)->model()->isTrack(id.itemId)) {
             refreshProjectMonitorOnce();
         }
         break;
@@ -873,7 +875,7 @@ void Core::refreshProjectItem(const ObjectId &id)
             m_monitorManager->activateMonitor(Kdenlive::ClipMonitor);
             m_monitorManager->refreshClipMonitor(true);
         }
-        if (m_monitorManager->projectMonitorVisible() && m_mainWindow->getCurrentTimeline()->controller()->refreshIfVisible(id.second)) {
+        if (m_monitorManager->projectMonitorVisible() && m_mainWindow->getCurrentTimeline()->controller()->refreshIfVisible(id.itemId)) {
             m_monitorManager->refreshTimer.start();
         }
         break;
@@ -1028,23 +1030,23 @@ std::shared_ptr<ProjectItemModel> Core::projectItemModel()
 
 void Core::invalidateRange(QPair<int, int> range)
 {
-    if (!m_guiConstructed || m_mainWindow->getCurrentTimeline()->loading) return;
+    if (!m_guiConstructed || currentDoc()->loading || !m_mainWindow->getCurrentTimeline() || m_mainWindow->getCurrentTimeline()->loading) return;
     m_mainWindow->getCurrentTimeline()->model()->invalidateZone(range.first, range.second);
 }
 
 void Core::invalidateItem(ObjectId itemId)
 {
     if (!m_guiConstructed || !m_mainWindow->getCurrentTimeline() || m_mainWindow->getCurrentTimeline()->loading) return;
-    switch (itemId.first) {
+    switch (itemId.type) {
     case ObjectType::TimelineClip:
     case ObjectType::TimelineComposition:
-        m_mainWindow->getCurrentTimeline()->controller()->invalidateItem(itemId.second);
+        m_mainWindow->getCurrentTimeline()->controller()->invalidateItem(itemId.itemId);
         break;
     case ObjectType::TimelineTrack:
-        m_mainWindow->getCurrentTimeline()->controller()->invalidateTrack(itemId.second);
+        m_mainWindow->getCurrentTimeline()->controller()->invalidateTrack(itemId.itemId);
         break;
     case ObjectType::BinClip:
-        m_mainWindow->getBin()->invalidateClip(QString::number(itemId.second));
+        m_mainWindow->getBin()->invalidateClip(QString::number(itemId.itemId));
         break;
     case ObjectType::Master:
         m_mainWindow->getCurrentTimeline()->model()->invalidateZone(0, -1);
@@ -1062,43 +1064,48 @@ double Core::getClipSpeed(int id) const
 
 void Core::updateItemKeyframes(ObjectId id)
 {
-    if (id.first == ObjectType::TimelineClip && m_guiConstructed) {
-        m_mainWindow->getCurrentTimeline()->controller()->updateClip(id.second, {TimelineModel::KeyframesRole});
+    if (id.type == ObjectType::TimelineClip && m_guiConstructed) {
+        m_mainWindow->getCurrentTimeline()->controller()->updateClip(id.itemId, {TimelineModel::KeyframesRole});
     }
 }
 
 void Core::updateItemModel(ObjectId id, const QString &service)
 {
-    if (m_guiConstructed && id.first == ObjectType::TimelineClip && !m_mainWindow->getCurrentTimeline()->loading && service.startsWith(QLatin1String("fade"))) {
+    if (m_guiConstructed && id.type == ObjectType::TimelineClip && !m_mainWindow->getCurrentTimeline()->loading && service.startsWith(QLatin1String("fade"))) {
         bool startFade = service.startsWith(QLatin1String("fadein")) || service.startsWith(QLatin1String("fade_from_"));
-        m_mainWindow->getCurrentTimeline()->controller()->updateClip(id.second, {startFade ? TimelineModel::FadeInRole : TimelineModel::FadeOutRole});
+        m_mainWindow->getCurrentTimeline()->controller()->updateClip(id.itemId, {startFade ? TimelineModel::FadeInRole : TimelineModel::FadeOutRole});
     }
 }
 
 void Core::showClipKeyframes(ObjectId id, bool enable)
 {
-    if (id.first == ObjectType::TimelineClip) {
-        m_mainWindow->getCurrentTimeline()->controller()->showClipKeyframes(id.second, enable);
-    } else if (id.first == ObjectType::TimelineComposition) {
-        m_mainWindow->getCurrentTimeline()->controller()->showCompositionKeyframes(id.second, enable);
+    if (id.type == ObjectType::TimelineClip) {
+        m_mainWindow->getCurrentTimeline()->controller()->showClipKeyframes(id.itemId, enable);
+    } else if (id.type == ObjectType::TimelineComposition) {
+        m_mainWindow->getCurrentTimeline()->controller()->showCompositionKeyframes(id.itemId, enable);
     }
 }
 
-Mlt::Profile *Core::thumbProfile()
+void Core::resetThumbProfile()
 {
-    QMutexLocker lck(&m_thumbProfileMutex);
-    if (!m_thumbProfile) {
-        m_thumbProfile = std::make_unique<Mlt::Profile>(m_currentProfile.toUtf8().constData());
-        double factor = 144. / m_thumbProfile->height();
-        m_thumbProfile->set_height(144);
-        int width = qRound(m_thumbProfile->width() * factor);
-        if (width % 2 > 0) {
-            width++;
-        }
-        m_thumbProfile->set_width(width);
-        m_thumbProfile->set_explicit(true);
+    m_thumbProfile.set_colorspace(m_projectProfile.colorspace());
+    m_thumbProfile.set_frame_rate(m_projectProfile.frame_rate_num(), m_projectProfile.frame_rate_den());
+    double factor = 144. / m_projectProfile.height();
+    m_thumbProfile.set_height(144);
+    int width = qRound(m_projectProfile.width() * factor);
+    if (width % 2 > 0) {
+        width++;
     }
-    return m_thumbProfile.get();
+    m_thumbProfile.set_width(width);
+    m_thumbProfile.set_progressive(m_projectProfile.progressive());
+    m_thumbProfile.set_sample_aspect(m_projectProfile.sample_aspect_num(), m_projectProfile.sample_aspect_den());
+    m_thumbProfile.set_display_aspect(m_projectProfile.display_aspect_num(), m_projectProfile.display_aspect_den());
+    m_thumbProfile.set_explicit(true);
+}
+
+Mlt::Profile &Core::thumbProfile()
+{
+    return m_thumbProfile;
 }
 
 int Core::getMonitorPosition(Kdenlive::MonitorId id) const
@@ -1143,6 +1150,7 @@ void Core::clean()
 
 void Core::startMediaCapture(int tid, bool checkAudio, bool checkVideo)
 {
+    Q_UNUSED(checkVideo)
     // TODO: fix video capture
     /*if (checkAudio && checkVideo) {
         m_capture->recordVideo(tid, true);
@@ -1155,6 +1163,7 @@ void Core::startMediaCapture(int tid, bool checkAudio, bool checkVideo)
 
 void Core::stopMediaCapture(int tid, bool checkAudio, bool checkVideo)
 {
+    Q_UNUSED(checkVideo)
     // TODO: fix video capture
     /*if (checkAudio && checkVideo) {
         m_capture->recordVideo(tid, false);
@@ -1349,7 +1358,7 @@ void Core::setWidgetKeyBinding(const QString &mess)
 
 void Core::showEffectZone(ObjectId id, QPair<int, int> inOut, bool checked)
 {
-    if (m_guiConstructed && m_mainWindow->getCurrentTimeline() && m_mainWindow->getCurrentTimeline()->controller() && id.first != ObjectType::BinClip) {
+    if (m_guiConstructed && m_mainWindow->getCurrentTimeline() && m_mainWindow->getCurrentTimeline()->controller() && id.type != ObjectType::BinClip) {
         m_mainWindow->getCurrentTimeline()->controller()->showRulerEffectZone(inOut, checked);
     }
 }
@@ -1372,14 +1381,21 @@ void Core::resizeMix(int cid, int duration, MixAlignment align, int leftFrames)
     m_mainWindow->getCurrentTimeline()->controller()->resizeMix(cid, duration, align, leftFrames);
 }
 
-MixAlignment Core::getMixAlign(int cid) const
+MixAlignment Core::getMixAlign(const ObjectId &itemInfo) const
 {
-    return m_mainWindow->getCurrentTimeline()->controller()->getMixAlign(cid);
+    return m_mainWindow->getTimeline(itemInfo.uuid)->controller()->getMixAlign(itemInfo.itemId);
 }
 
-int Core::getMixCutPos(int cid) const
+int Core::getMixCutPos(const ObjectId &itemInfo) const
 {
-    return m_mainWindow->getCurrentTimeline()->controller()->getMixCutPos(cid);
+    return m_mainWindow->getTimeline(itemInfo.uuid)->controller()->getMixCutPos(itemInfo.itemId);
+}
+
+void Core::clearTimeRemap()
+{
+    if (timeRemapWidget()) {
+        timeRemapWidget()->selectedClip(-1, QUuid());
+    }
 }
 
 void Core::cleanup()
@@ -1387,7 +1403,7 @@ void Core::cleanup()
     audioThumbCache.clear();
     taskManager.slotCancelJobs();
     if (timeRemapWidget()) {
-        timeRemapWidget()->selectedClip(-1);
+        timeRemapWidget()->selectedClip(-1, QUuid());
     }
     if (m_mainWindow && m_mainWindow->getCurrentTimeline()) {
         disconnect(m_mainWindow->getCurrentTimeline()->controller(), &TimelineController::durationChanged, m_projectManager,
@@ -1414,9 +1430,9 @@ void Core::addBin(const QString &id)
 
 void Core::loadTimelinePreview(const QUuid uuid, const QString &chunks, const QString &dirty, bool enablePreview, Mlt::Playlist &playlist)
 {
-    TimelineWidget *tl = pCore->window()->getTimeline(uuid);
+    std::shared_ptr<TimelineItemModel> tl = pCore->currentDoc()->getTimeline(uuid);
     if (tl) {
-        tl->controller()->loadPreview(chunks, dirty, enablePreview, playlist);
+        tl->loadPreview(chunks, dirty, enablePreview, playlist);
     }
 }
 

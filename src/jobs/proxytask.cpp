@@ -38,18 +38,18 @@ void ProxyTask::start(const ObjectId &owner, QObject *object, bool force)
     ProxyTask *task = new ProxyTask(owner, object);
     // Otherwise, start a new proxy generation thread.
     task->m_isForce = force;
-    pCore->taskManager.startTask(owner.second, task);
+    pCore->taskManager.startTask(owner.itemId, task);
 }
 
 void ProxyTask::run()
 {
-    AbstractTaskDone whenFinished(m_owner.second, this);
+    AbstractTaskDone whenFinished(m_owner.itemId, this);
     if (m_isCanceled || pCore->taskManager.isBlocked()) {
         return;
     }
     QMutexLocker lock(&m_runMutex);
     m_running = true;
-    auto binClip = pCore->projectItemModel()->getClipByBinID(QString::number(m_owner.second));
+    auto binClip = pCore->projectItemModel()->getClipByBinID(QString::number(m_owner.itemId));
     if (binClip == nullptr) {
         return;
     }
@@ -178,7 +178,7 @@ void ProxyTask::run()
         qDebug() << " :: STARTING PLAYLIST PROXY: " << mltParameters;
         QObject::connect(this, &ProxyTask::jobCanceled, m_jobProcess.get(), &QProcess::kill, Qt::DirectConnection);
         QObject::connect(m_jobProcess.get(), &QProcess::readyReadStandardError, this, &ProxyTask::processLogInfo);
-        m_jobProcess->start(KdenliveSettings::rendererpath(), mltParameters);
+        m_jobProcess->start(KdenliveSettings::meltpath(), mltParameters);
         AbstractTask::setPreferredPriority(m_jobProcess->processId());
         m_jobProcess->waitForFinished(-1);
         result = m_jobProcess->exitStatus() == QProcess::NormalExit;

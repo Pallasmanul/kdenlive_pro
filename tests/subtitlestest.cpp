@@ -5,11 +5,9 @@
 */
 #include "catch.hpp"
 #include "test_utils.hpp"
-
-#include "definitions.h"
-#define private public
-#define protected public
+// test specific headers
 #include "core.h"
+#include "definitions.h"
 #include "doc/docundostack.hpp"
 #include "doc/kdenlivedoc.h"
 
@@ -38,7 +36,7 @@ TEST_CASE("Read subtitle file", "[Subtitles]")
 
     mocked.m_project = &mockedDoc;
     QDateTime documentDate = QDateTime::currentDateTime();
-    mocked.updateTimeline(0, false, QString(), QString(), documentDate, 0);
+    mocked.updateTimeline(false, QString(), QString(), documentDate, 0);
     auto timeline = mockedDoc.getTimeline(mockedDoc.uuid());
     mocked.m_activeTimelineModel = timeline;
     mocked.testSetActiveDocument(&mockedDoc, timeline);

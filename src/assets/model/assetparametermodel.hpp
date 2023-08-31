@@ -90,7 +90,6 @@ public:
         ValueRole,
         AlphaRole,
         ListValuesRole,
-        InstalledValuesRole,
         ListNamesRole,
         ListDependenciesRole,
         NewStuffRole,
@@ -104,6 +103,8 @@ public:
         ScaleRole,
         OpacityRole,
         RelativePosRole,
+        // The filter in/out should always be 0 - full length
+        RequiresInOut,
         ToTimePosRole,
         // Don't display this param in timeline keyframes
         ShowInTimelineRole,
@@ -182,14 +183,14 @@ public:
     Q_INVOKABLE std::shared_ptr<KeyframeModelList> getKeyframeModel();
 
     /** @brief Must be called before using the keyframes of this model */
-    void prepareKeyframes();
+    void prepareKeyframes(int in = -1, int out = -1);
     void resetAsset(std::unique_ptr<Mlt::Properties> asset);
     /** @brief Returns true if the effect has more than one keyframe */
     bool hasMoreThanOneKeyframe() const;
     int time_to_frames(const QString &time) const;
     void passProperties(Mlt::Properties &target);
-    /** @brief Returns a list of the parameter names that are keyframable */
-    QStringList getKeyframableParameters() const;
+    /** @brief Returns a list of the parameter names that are keyframable, along with param type and opacity use */
+    QMap<QString, std::pair<ParamType, bool>> getKeyframableParameters() const;
 
     /** @brief Returns the current value of an effect parameter */
     const QString getParam(const QString &paramName);
@@ -227,7 +228,7 @@ protected:
     /** @brief Helper function to register one more parameter that is keyframable.
        @param index is the index corresponding to this parameter
     */
-    void addKeyframeParam(const QModelIndex &index);
+    void addKeyframeParam(const QModelIndex &index, int in, int out);
 
     struct ParamRow
     {
@@ -256,6 +257,8 @@ protected:
     int m_activeKeyframe;
     /** @brief if true, keyframe tools will be hidden by default */
     bool m_hideKeyframesByDefault;
+    /** @brief if true, the effect's in/out will always be synced to clip in/out */
+    bool m_requiresInOut;
     /** @brief true if this is an audio effect, used to prevent unnecessary monitor refresh / timeline invalidate */
     bool m_isAudio;
     /** @brief Store a filter's job progress */
@@ -264,7 +267,7 @@ protected:
     /** @brief Set the parameter with given name to the given value. This should be called when first
      *  building an effect in the constructor, so that we don't call shared_from_this
      */
-    void internalSetParameter(const QString &name, const QString &paramValue, const QModelIndex &paramIndex = QModelIndex());
+    void internalSetParameter(const QString name, const QString paramValue, const QModelIndex &paramIndex = QModelIndex());
 
 Q_SIGNALS:
     void modelChanged();

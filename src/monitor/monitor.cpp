@@ -371,7 +371,11 @@ Monitor::Monitor(Kdenlive::MonitorId id, MonitorManager *manager, QWidget *paren
     freeAction->setData(0);
     m_configMenuAction->addAction(m_forceSize);
     m_forceSize->setCurrentAction(freeAction);
+#if KWIDGETSADDONS_VERSION >= QT_VERSION_CHECK(5, 240, 0)
+    connect(m_forceSize, &KSelectAction::actionTriggered, this, &Monitor::slotForceSize);
+#else
     connect(m_forceSize, static_cast<void (KSelectAction::*)(QAction *)>(&KSelectAction::triggered), this, &Monitor::slotForceSize);
+#endif
 
     if (m_id == Kdenlive::ClipMonitor) {
         m_background = new KSelectAction(QIcon::fromTheme(QStringLiteral("paper-color")), i18n("Background Color"), this);
@@ -389,7 +393,11 @@ Monitor::Monitor(Kdenlive::MonitorId id, MonitorManager *manager, QWidget *paren
         } else {
             m_background->setCurrentAction(blackAction);
         }
-        connect(m_background, static_cast<void (KSelectAction::*)(QAction *)>(&KSelectAction::triggered), this, [this](QAction *a) {
+#if KWIDGETSADDONS_VERSION >= QT_VERSION_CHECK(5, 240, 0)
+    connect(m_background, &KSelectAction::actionTriggered, this, [this](QAction *a) {
+#else
+    connect(m_background, static_cast<void (KSelectAction::*)(QAction *)>(&KSelectAction::triggered), this, [this](QAction *a) {
+#endif
             KdenliveSettings::setMonitor_background(a->data().toString());
             buildBackgroundedProducer(position());
         });
@@ -705,7 +713,7 @@ void Monitor::buildBackgroundedProducer(int pos)
         return;
     }
     if (KdenliveSettings::monitor_background() != "black") {
-        Mlt::Tractor trac(*pCore->getProjectProfile());
+        Mlt::Tractor trac(pCore->getProjectProfile());
         QString color = QString("color:%1").arg(KdenliveSettings::monitor_background());
         std::shared_ptr<Mlt::Producer> bg(new Mlt::Producer(*trac.profile(), color.toUtf8().constData()));
         int maxLength = m_controller->originalProducer()->get_length();
@@ -822,7 +830,7 @@ void Monitor::slotSetZoneStart()
 void Monitor::slotSetZoneEnd()
 {
     QPoint oldZone = m_glMonitor->getControllerProxy()->zone();
-    int currentOut = m_glMonitor->getCurrentPos();
+    int currentOut = m_glMonitor->getCurrentPos() + 1;
     int updatedZoneIn = -1;
     if (currentOut < oldZone.x()) {
         updatedZoneIn = qMax(0, currentOut - (oldZone.y() - oldZone.x()));
@@ -993,7 +1001,9 @@ void Monitor::slotSwitchFullScreen(bool minimizeOnly)
         m_glWidget->showNormal();
         auto *lay = static_cast<QVBoxLayout *>(layout());
         lay->insertWidget(0, m_glWidget, 10);
-        activateWindow();
+        // With some Qt versions, focus was lost after switching back from fullscreen,
+        // QApplication::setActiveWindow restores focus to the correct window
+        QApplication::setActiveWindow(this);
         setFocus();
     }
 }
@@ -1041,7 +1051,7 @@ void Monitor::slotStartDrag()
         QStringList list;
         list.append(m_controller->AbstractProjectItem::clipId());
         list.append(QString::number(p.x()));
-        list.append(QString::number(p.y()));
+        list.append(QString::number(p.y() - 1));
         prodData.append(list.join(QLatin1Char('/')).toUtf8());
     }
     mimeData->setData(QStringLiteral("kdenlive/producerslist"), prodData);
@@ -1125,7 +1135,7 @@ void Monitor::slotExtractCurrentZone()
     if (m_controller == nullptr) {
         return;
     }
-    CutTask::start({ObjectType::BinClip, m_controller->clipId().toInt()}, getZoneStart(), getZoneEnd(), this);
+    CutTask::start(ObjectId(ObjectType::BinClip, m_controller->clipId().toInt(), QUuid()), getZoneStart(), getZoneEnd(), this);
 }
 
 std::shared_ptr<ProjectClip> Monitor::currentController() const
@@ -1160,7 +1170,7 @@ void Monitor::slotExtractCurrentFrame(QString frameName, bool addToProject)
     }
     QScopedPointer<QDialog> dlg(new QDialog(this));
     QScopedPointer<KFileWidget> fileWidget(new KFileWidget(QUrl::fromLocalFile(framesFolder), dlg.data()));
-    dlg->setWindowTitle(addToProject ? i18nc("@title:window", "Save Image") : i18nc("@title:window", "Save Image to Project"));
+    dlg->setWindowTitle(addToProject ? i18nc("@title:window", "Save Image to Project") : i18nc("@title:window", "Save Image"));
     auto *layout = new QVBoxLayout;
     layout->addWidget(fileWidget.data());
     QCheckBox *b = nullptr;
@@ -1404,7 +1414,7 @@ void Monitor::slotRewind(double speed)
         }
     }
     updatePlayAction(true);
-    m_glMonitor->switchPlay(true, m_offset, speed);
+    m_glMonitor->switchPlay(true, speed);
 }
 
 void Monitor::slotForward(double speed, bool allowNormalPlay)
@@ -1419,7 +1429,7 @@ void Monitor::slotForward(double speed, bool allowNormalPlay)
             if (allowNormalPlay) {
                 m_glMonitor->purgeCache();
                 updatePlayAction(true);
-                m_glMonitor->switchPlay(true, m_offset);
+                m_glMonitor->switchPlay(true);
                 return;
             }
         } else {
@@ -1431,7 +1441,7 @@ void Monitor::slotForward(double speed, bool allowNormalPlay)
         speed = MonitorManager::speedArray[m_speedIndex];
     }
     updatePlayAction(true);
-    m_glMonitor->switchPlay(true, m_offset, speed);
+    m_glMonitor->switchPlay(true, speed);
 }
 
 void Monitor::slotRewindOneFrame(int diff)
@@ -1569,14 +1579,16 @@ void Monitor::switchPlay(bool play)
         return;
     }
     m_speedIndex = 0;
-    m_playAction->setActive(play);
     if (!play) {
         m_droppedTimer.stop();
     }
     if (!KdenliveSettings::autoscroll()) {
         Q_EMIT pCore->autoScrollChanged();
     }
-    m_glMonitor->switchPlay(play, m_offset);
+    if (!m_glMonitor->switchPlay(play)) {
+        play = false;
+    }
+    m_playAction->setActive(play);
 }
 
 void Monitor::updatePlayAction(bool play)
@@ -1619,7 +1631,10 @@ void Monitor::slotSwitchPlay()
         }
         pCore->recordAudio(-1, true);
     }
-    m_glMonitor->switchPlay(play, m_offset);
+    if (!m_glMonitor->switchPlay(play)) {
+        play = false;
+        m_playAction->setActive(false);
+    }
     bool showDropped = false;
     if (m_id == Kdenlive::ClipMonitor) {
         showDropped = KdenliveSettings::displayClipMonitorInfo() & 0x20;
@@ -1701,7 +1716,7 @@ void Monitor::updateClipProducer(const QString &playlist)
     // TODO
     // Mlt::Producer *prod = new Mlt::Producer(*m_glMonitor->profile(), playlist.toUtf8().constData());
     // m_glMonitor->setProducer(prod, isActive(), render->seekFramePosition());
-    m_glMonitor->switchPlay(true, m_offset);
+    m_glMonitor->switchPlay(true);
 }
 
 void Monitor::slotOpenClip(const std::shared_ptr<ProjectClip> &controller, int in, int out)
@@ -1855,6 +1870,11 @@ void Monitor::slotOpenClip(const std::shared_ptr<ProjectClip> &controller, int i
         start();
     }
     checkOverlay();
+}
+
+void Monitor::loadZone(int in, int out)
+{
+    m_glMonitor->getControllerProxy()->setZone({in, out}, false);
 }
 
 void Monitor::reloadActiveStream()
@@ -2235,7 +2255,7 @@ void Monitor::slotSwitchCompare(bool enable)
                 // Split scene is already active
                 return;
             }
-            m_splitEffect.reset(new Mlt::Filter(*pCore->getProjectProfile(), "frei0r.alphagrad"));
+            m_splitEffect.reset(new Mlt::Filter(pCore->getProjectProfile(), "frei0r.alphagrad"));
             if ((m_splitEffect != nullptr) && m_splitEffect->is_valid()) {
                 m_splitEffect->set("0", 0.5);    // 0 is the Clip left parameter
                 m_splitEffect->set("1", 0);      // 1 is gradient width
@@ -2292,7 +2312,7 @@ void Monitor::resetScene()
 
 void Monitor::buildSplitEffect(Mlt::Producer *original)
 {
-    m_splitEffect.reset(new Mlt::Filter(*pCore->getProjectProfile(), "frei0r.alphagrad"));
+    m_splitEffect.reset(new Mlt::Filter(pCore->getProjectProfile(), "frei0r.alphagrad"));
     if ((m_splitEffect != nullptr) && m_splitEffect->is_valid()) {
         m_splitEffect->set("0", 0.5);    // 0 is the Clip left parameter
         m_splitEffect->set("1", 0);      // 1 is gradient width
@@ -2303,13 +2323,13 @@ void Monitor::buildSplitEffect(Mlt::Producer *original)
         return;
     }
     QString splitTransition = TransitionsRepository::get()->getCompositingTransition();
-    Mlt::Transition t(*pCore->getProjectProfile(), splitTransition.toUtf8().constData());
+    Mlt::Transition t(pCore->getProjectProfile(), splitTransition.toUtf8().constData());
     if (!t.is_valid()) {
         m_splitEffect.reset();
         pCore->displayMessage(i18n("The cairoblend transition is required for that feature, please install frei0r and restart Kdenlive"), ErrorMessage);
         return;
     }
-    Mlt::Tractor trac(*pCore->getProjectProfile());
+    Mlt::Tractor trac(pCore->getProjectProfile());
     std::shared_ptr<Mlt::Producer> clone = ProjectClip::cloneProducer(std::make_shared<Mlt::Producer>(original));
     // Delete all effects
     int ct = 0;

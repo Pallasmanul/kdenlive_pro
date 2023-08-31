@@ -133,7 +133,7 @@ public:
     TimelineWidget *getCurrentTimeline() const;
     /** @brief Returns a pointer to the timeline with @uuid */
     TimelineWidget *getTimeline(const QUuid uuid) const;
-    void closeTimeline(const QUuid &uuid);
+    void closeTimelineTab(const QUuid uuid);
     /** @brief Returns a list of opened tabs uuids */
     const QStringList openedSequences() const;
 
@@ -182,7 +182,7 @@ public:
 
     /** @brief Check if the maximum cached data size is not exceeded. */
     void checkMaxCacheSize();
-    TimelineWidget *openTimeline(const QUuid &uuid, const QString &tabName, std::shared_ptr<TimelineItemModel> timelineModel, MonitorProxy *proxy);
+    TimelineWidget *openTimeline(const QUuid &uuid, const QString &tabName, std::shared_ptr<TimelineItemModel> timelineModel);
     /** @brief Bring a timeline tab in front. Returns false if no tab exists for this timeline. */
     bool raiseTimeline(const QUuid &uuid);
     void connectTimeline();
@@ -338,6 +338,7 @@ public Q_SLOTS:
 
     void slotSwitchVideoThumbs();
     void slotSwitchAudioThumbs();
+    void appHelpActivated();
 
     void slotPreferences();
     void slotShowPreferencePage(Kdenlive::ConfigPage page, int option = -1);
@@ -385,6 +386,8 @@ public Q_SLOTS:
     void slotUpdateDocumentState(bool modified);
     /** @brief Open the clip job management dialog */
     void manageClipJobs(AbstractTask::JOBTYPE type = AbstractTask::NOJOBTYPE, QWidget *parentWidget = nullptr);
+    /** @brief Deletes item in timeline, project tree or effect stack depending on focus. */
+    void slotDeleteItem();
 
 private Q_SLOTS:
     /** @brief Shows the shortcut dialog. */
@@ -413,8 +416,6 @@ private Q_SLOTS:
      *
      * Adopted from Dolphin (src/statusbar/dolphinstatusbar.cpp) */
     void slotShowZoomSliderToolTip(int zoomlevel = -1);
-    /** @brief Deletes item in timeline, project tree or effect stack depending on focus. */
-    void slotDeleteItem();
     void slotAddClipMarker();
     void slotDeleteClipMarker(bool allowGuideDeletion = false);
     void slotDeleteAllClipMarkers();
@@ -438,6 +439,7 @@ private Q_SLOTS:
     void slotRemovePreviewRender();
     void slotClearPreviewRender(bool resetZones = true);
     void slotSelectTimelineClip();
+    void slotSelectTimelineZone();
     void slotSelectTimelineTransition();
     void slotDeselectTimelineClip();
     void slotDeselectTimelineTransition();
@@ -481,6 +483,8 @@ private Q_SLOTS:
     void slotSeparateAudioChannel();
     /** @brief Normalize audio channels before displaying them */
     void slotNormalizeAudioChannel();
+    /** @brief Toggle automatic fit track height */
+    void slotAutoTrackHeight(bool enable);
     void slotInsertTrack();
     void slotDeleteTrack();
     /** @brief Show context menu to switch current track target audio stream. */
@@ -622,6 +626,6 @@ Q_SIGNALS:
     void adjustAssetPanelRange(int itemId, int in, int out);
     /** @brief Enable or disable the undo stack. For example undo/redo should not be enabled when dragging a clip in timeline or we risk corruption. */
     void enableUndo(bool enable);
-    bool focusTimeline(bool focus, bool highlight);
+    bool showTimelineFocus(bool focus, bool highlight);
     void removeBinDock(const QString &name);
 };

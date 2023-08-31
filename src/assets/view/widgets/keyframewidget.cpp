@@ -114,7 +114,11 @@ KeyframeWidget::KeyframeWidget(std::shared_ptr<AssetParameterModel> model, QMode
     curve->setCheckable(true);
     m_selectType->addAction(curve);
     m_selectType->setCurrentAction(linear);
+#if KWIDGETSADDONS_VERSION >= QT_VERSION_CHECK(5, 240, 0)
+    connect(m_selectType, &KSelectAction::actionTriggered, this, &KeyframeWidget::slotEditKeyframeType);
+#else
     connect(m_selectType, static_cast<void (KSelectAction::*)(QAction *)>(&KSelectAction::triggered), this, &KeyframeWidget::slotEditKeyframeType);
+#endif
     m_selectType->setToolBarMode(KSelectAction::MenuMode);
     m_selectType->setToolTip(i18n("Keyframe interpolation"));
     m_selectType->setWhatsThis(xi18nc("@info:whatsthis", "Keyframe interpolation. This defines which interpolation will be used for the current keyframe."));
@@ -182,8 +186,13 @@ KeyframeWidget::KeyframeWidget(std::shared_ptr<AssetParameterModel> model, QMode
         kfType->setCurrentAction(linear2);
         break;
     }
-    connect(kfType, static_cast<void (KSelectAction::*)(QAction *)>(&KSelectAction::triggered), this,
+#if KWIDGETSADDONS_VERSION >= QT_VERSION_CHECK(5, 240, 0)
+    connect(kfType, &KSelectAction::actionTriggered, this,
             [&](QAction *ac) { KdenliveSettings::setDefaultkeyframeinterp(ac->data().toInt()); });
+#else
+    connect(kfType, static_cast<void (KSelectAction::*)(QAction *)>(&KSelectAction::triggered), this,
+                [&](QAction *ac) { KdenliveSettings::setDefaultkeyframeinterp(ac->data().toInt()); });
+#endif
 
     // rotoscoping only supports linear keyframes
     if (m_model->getAssetId() == QLatin1String("rotoscoping")) {
@@ -217,7 +226,7 @@ KeyframeWidget::KeyframeWidget(std::shared_ptr<AssetParameterModel> model, QMode
     connect(m_time, &TimecodeDisplay::timeCodeEditingFinished, this, [&]() { slotSetPosition(-1, true); });
     connect(m_keyframeview, &KeyframeView::seekToPos, this, [&](int pos) {
         int in = m_model->data(m_index, AssetParameterModel::InRole).toInt();
-        bool canHaveZone = m_model->getOwnerId().first == ObjectType::Master || m_model->getOwnerId().first == ObjectType::TimelineTrack;
+        bool canHaveZone = m_model->getOwnerId().type == ObjectType::Master || m_model->getOwnerId().type == ObjectType::TimelineTrack;
         if (pos < 0) {
             m_time->setValue(0);
             m_keyframeview->slotSetPosition(0, true);
@@ -364,7 +373,7 @@ void KeyframeWidget::monitorSeek(int pos)
 {
     int in = 0;
     int out = 0;
-    bool canHaveZone = m_model->getOwnerId().first == ObjectType::Master || m_model->getOwnerId().first == ObjectType::TimelineTrack;
+    bool canHaveZone = m_model->getOwnerId().type == ObjectType::Master || m_model->getOwnerId().type == ObjectType::TimelineTrack;
     if (canHaveZone) {
         bool ok = false;
         in = m_model->data(m_index, AssetParameterModel::InRole).toInt(&ok);
@@ -435,7 +444,7 @@ void KeyframeWidget::slotRefreshParams()
 }
 void KeyframeWidget::slotSetPosition(int pos, bool update)
 {
-    bool canHaveZone = m_model->getOwnerId().first == ObjectType::Master || m_model->getOwnerId().first == ObjectType::TimelineTrack;
+    bool canHaveZone = m_model->getOwnerId().type == ObjectType::Master || m_model->getOwnerId().type == ObjectType::TimelineTrack;
     int offset = 0;
     if (pos < 0) {
         if (canHaveZone) {

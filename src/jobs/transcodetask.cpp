@@ -51,19 +51,19 @@ void TranscodeTask::start(const ObjectId &owner, const QString &suffix, const QS
     if (task) {
         // Otherwise, start a new audio levels generation thread.
         task->m_isForce = force;
-        pCore->taskManager.startTask(owner.second, task);
+        pCore->taskManager.startTask(owner.itemId, task);
     }
 }
 
 void TranscodeTask::run()
 {
-    AbstractTaskDone whenFinished(m_owner.second, this);
+    AbstractTaskDone whenFinished(m_owner.itemId, this);
     if (m_isCanceled || pCore->taskManager.isBlocked()) {
         return;
     }
     QMutexLocker lock(&m_runMutex);
     m_running = true;
-    auto binClip = pCore->projectItemModel()->getClipByBinID(QString::number(m_owner.second));
+    auto binClip = pCore->projectItemModel()->getClipByBinID(QString::number(m_owner.itemId));
     ClipType::ProducerType type = binClip->clipType();
     QString source;
     QTemporaryFile src;
@@ -170,7 +170,7 @@ void TranscodeTask::run()
         // m_jobProcess->setProcessChannelMode(QProcess::MergedChannels);
         QObject::connect(this, &TranscodeTask::jobCanceled, m_jobProcess.get(), &QProcess::kill, Qt::DirectConnection);
         QObject::connect(m_jobProcess.get(), &QProcess::readyReadStandardError, this, &TranscodeTask::processLogInfo);
-        m_jobProcess->start(KdenliveSettings::rendererpath(), mltParameters);
+        m_jobProcess->start(KdenliveSettings::meltpath(), mltParameters);
         AbstractTask::setPreferredPriority(m_jobProcess->processId());
         m_jobProcess->waitForFinished(-1);
         result = m_jobProcess->exitStatus() == QProcess::NormalExit;
@@ -231,7 +231,7 @@ void TranscodeTask::run()
             QMetaObject::invokeMethod(pCore.get(), "displayBinLogMessage", Qt::QueuedConnection, Q_ARG(QString, i18n("Failed to create file.")),
                                       Q_ARG(int, int(KMessageWidget::Warning)), Q_ARG(QString, m_logDetails));
         } else {
-            if (m_replaceProducer && binClip) {
+            if (m_replaceProducer && binClip && binClip->clipType() != ClipType::Timeline) {
                 QMap<QString, QString> sourceProps;
                 QMap<QString, QString> newProps;
                 sourceProps.insert(QStringLiteral("resource"), binClip->url());

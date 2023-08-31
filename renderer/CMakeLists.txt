@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: BSD-2-Clause
+# SPDX-FileCopyrightText: Vincent Pinon <vpinon@kde.org>, Jean-Baptiste Mardelle <jb@kdenlive.org>
+
 set(QT_DONT_USE_QTGUI 1)
 if(NOT NODBUS)
 set(QT_USE_QTDBUS 1)
@@ -26,4 +29,4 @@ else()
     target_link_libraries(kdenlive_render Qt${QT_MAJOR_VERSION}::DBus)
 endif()
 
-install(TARGETS kdenlive_render DESTINATION ${KDE_INSTALLBINDIR})
+install(TARGETS kdenlive_render DESTINATION ${KDE_INSTALL_BINDIR})

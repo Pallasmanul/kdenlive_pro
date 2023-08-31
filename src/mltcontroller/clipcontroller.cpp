@@ -39,7 +39,8 @@ ClipController::ClipController(const QString &clipId, const std::shared_ptr<Mlt:
     , m_clipType(ClipType::Unknown)
     , m_forceLimitedDuration(false)
     , m_hasMultipleVideoStreams(false)
-    , m_effectStack(m_masterProducer ? EffectStackModel::construct(m_masterProducer, {ObjectType::BinClip, clipId.toInt()}, pCore->undoStack()) : nullptr)
+    , m_effectStack(m_masterProducer ? EffectStackModel::construct(m_masterProducer, ObjectId(ObjectType::BinClip, clipId.toInt(), QUuid()), pCore->undoStack())
+                                     : nullptr)
     , m_hasAudio(false)
     , m_hasVideo(false)
     , m_thumbsProducer(nullptr)
@@ -62,7 +63,9 @@ ClipController::ClipController(const QString &clipId, const std::shared_ptr<Mlt:
 ClipController::~ClipController()
 {
     delete m_properties;
+    Q_ASSERT(m_thumbsProducer.use_count() <= 1);
     m_thumbsProducer.reset();
+    Q_ASSERT(m_masterProducer.use_count() <= 1);
     m_masterProducer.reset();
 }
 
@@ -104,7 +107,7 @@ void ClipController::addMasterProducer(const std::shared_ptr<Mlt::Producer> &pro
     }
     m_tempProps.clear();
     int id = m_controllerBinId.toInt();
-    m_effectStack = EffectStackModel::construct(m_masterProducer, {ObjectType::BinClip, id}, pCore->undoStack());
+    m_effectStack = EffectStackModel::construct(m_masterProducer, ObjectId(ObjectType::BinClip, id, QUuid()), pCore->undoStack());
     if (!m_masterProducer->is_valid()) {
         m_masterProducer = ClipController::mediaUnavailable;
         qCDebug(KDENLIVE_LOG) << "// WARNING, USING INVALID PRODUCER";
@@ -112,7 +115,6 @@ void ClipController::addMasterProducer(const std::shared_ptr<Mlt::Producer> &pro
         setProducerProperty(QStringLiteral("kdenlive:id"), m_controllerBinId);
         getInfoForProducer();
         checkAudioVideo();
-        emitProducerChanged(m_controllerBinId, m_masterProducer);
         if (!m_hasMultipleVideoStreams && m_service.startsWith(QLatin1String("avformat")) && (m_clipType == ClipType::AV || m_clipType == ClipType::Video)) {
             // Check if clip has multiple video streams
             QList<int> videoStreams;
@@ -123,6 +125,26 @@ void ClipController::addMasterProducer(const std::shared_ptr<Mlt::Producer> &pro
                 snprintf(property, sizeof(property), "meta.media.%d.stream.type", ix);
                 QString type = m_properties->get(property);
                 if (type == QLatin1String("video")) {
+                    QString key = QString("meta.media.%1.codec.name").arg(ix);
+                    QString codec_name = m_properties->get(key.toLatin1().constData());
+                    if (codec_name == QLatin1String("png")) {
+                        // This is a cover image, skip
+                        qDebug() << "=== FOUND PNG COVER ART STREAM: " << ix;
+                        continue;
+                    }
+                    if (codec_name == QLatin1String("mjpeg")) {
+                        key = QString("meta.media.%1.stream.frame_rate").arg(ix);
+                        QString fps = m_properties->get(key.toLatin1().constData());
+                        if (fps.isEmpty()) {
+                            key = QString("meta.media.%1.codec.frame_rate").arg(ix);
+                            fps = m_properties->get(key.toLatin1().constData());
+                        }
+                        if (fps == QLatin1String("90000")) {
+                            // This is a cover image, skip
+                            qDebug() << "=== FOUND MJPEG COVER ART STREAM: " << ix;
+                            continue;
+                        }
+                    }
                     videoStreams << ix;
                 } else if (type == QLatin1String("audio")) {
                     audioStreams << ix;
@@ -440,7 +462,6 @@ void ClipController::updateProducer(const std::shared_ptr<Mlt::Producer> &produc
             getInfoForProducer();
         }
         checkAudioVideo();
-        emitProducerChanged(m_controllerBinId, m_masterProducer);
         // URL and name should not be updated otherwise when proxying a clip we cannot find back the original url
         /*m_url = QUrl::fromLocalFile(m_masterProducer->get("resource"));
         if (m_url.isValid()) {
@@ -948,7 +969,7 @@ void ClipController::mirrorOriginalProperties(std::shared_ptr<Mlt::Properties> p
         // This is a proxy, we need to use the real source properties
         if (m_properties->get_int("kdenlive:original.backup") == 0) {
             // We have a proxy clip, load original source producer
-            std::shared_ptr<Mlt::Producer> prod = std::make_shared<Mlt::Producer>(*pCore->getProjectProfile(), nullptr, m_path.toUtf8().constData());
+            std::shared_ptr<Mlt::Producer> prod = std::make_shared<Mlt::Producer>(pCore->getProjectProfile(), nullptr, m_path.toUtf8().constData());
             // Probe to retrieve all original props
             prod->probe();
             Mlt::Properties sourceProps(prod->get_properties());

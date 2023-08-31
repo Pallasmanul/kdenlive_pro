@@ -24,6 +24,8 @@ public:
     void refreshX265Params();
     RateControl videoRateControl() const;
     bool hasAlpha();
+    bool isImageSequence();
+    bool isX265();
 };
 
 /** @class RenderPresetModel

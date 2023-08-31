@@ -56,7 +56,7 @@ void ClipLoadTask::start(const ObjectId &owner, const QDomElement &xml, bool thu
         // Otherwise, start a new load task thread.
         task->m_isForce = force;
         connect(task, &ClipLoadTask::taskDone, [readyCallBack]() { QMetaObject::invokeMethod(qApp, [readyCallBack] { readyCallBack(); }); });
-        pCore->taskManager.startTask(owner.second, task);
+        pCore->taskManager.startTask(owner.itemId, task);
     }
 }
 
@@ -100,16 +100,16 @@ std::shared_ptr<Mlt::Producer> ClipLoadTask::loadResource(QString resource, cons
         resource.prepend(type);
     }
     if (resource.startsWith(QLatin1String("avformat"))) {
-        return std::make_shared<Mlt::Chain>(*pCore->getProjectProfile(), nullptr, resource.toUtf8().constData());
+        return std::make_shared<Mlt::Chain>(pCore->getProjectProfile(), nullptr, resource.toUtf8().constData());
     } else {
-        return std::make_shared<Mlt::Producer>(*pCore->getProjectProfile(), nullptr, resource.toUtf8().constData());
+        return std::make_shared<Mlt::Producer>(pCore->getProjectProfile(), nullptr, resource.toUtf8().constData());
     }
 }
 
 std::shared_ptr<Mlt::Producer> ClipLoadTask::loadPlaylist(QString &resource)
 {
     // since MLT 7.14.0, playlists with different fps can be used in a project without corrupting the profile
-    return std::make_shared<Mlt::Producer>(*pCore->getProjectProfile(), nullptr, resource.toUtf8().constData());
+    return std::make_shared<Mlt::Producer>(pCore->getProjectProfile(), nullptr, resource.toUtf8().constData());
 }
 
 // Read the properties of the xml and pass them to the producer. Note that some properties like resource are ignored
@@ -153,17 +153,17 @@ void ClipLoadTask::processSlideShow(std::shared_ptr<Mlt::Producer> producer)
     QString anim = Xml::getXmlProperty(m_xml, QStringLiteral("animation"));
     bool lowPass = Xml::getXmlProperty(m_xml, QStringLiteral("low-pass"), QStringLiteral("0")).toInt() == 1;
     if (lowPass) {
-        auto *blur = new Mlt::Filter(*pCore->getProjectProfile(), "avfilter.avgblur");
+        auto *blur = new Mlt::Filter(pCore->getProjectProfile(), "avfilter.avgblur");
         if ((blur == nullptr) || !blur->is_valid()) {
             delete blur;
-            blur = new Mlt::Filter(*pCore->getProjectProfile(), "boxblur");
+            blur = new Mlt::Filter(pCore->getProjectProfile(), "boxblur");
         }
         if ((blur != nullptr) && blur->is_valid()) {
             producer->attach(*blur);
         }
     }
     if (!anim.isEmpty()) {
-        auto *filter = new Mlt::Filter(*pCore->getProjectProfile(), "affine");
+        auto *filter = new Mlt::Filter(pCore->getProjectProfile(), "affine");
         if ((filter != nullptr) && filter->is_valid()) {
             int cycle = ttl;
             QString geometry = SlideshowClip::animationToGeometry(anim, cycle);
@@ -178,7 +178,7 @@ void ClipLoadTask::processSlideShow(std::shared_ptr<Mlt::Producer> producer)
     QString fade = Xml::getXmlProperty(m_xml, QStringLiteral("fade"));
     if (fade == QLatin1String("1")) {
         // user wants a fade effect to slideshow
-        auto *filter = new Mlt::Filter(*pCore->getProjectProfile(), "luma");
+        auto *filter = new Mlt::Filter(pCore->getProjectProfile(), "luma");
         if ((filter != nullptr) && filter->is_valid()) {
             if (ttl != 0) {
                 filter->set("cycle", ttl);
@@ -202,7 +202,7 @@ void ClipLoadTask::processSlideShow(std::shared_ptr<Mlt::Producer> producer)
     QString crop = Xml::getXmlProperty(m_xml, QStringLiteral("crop"));
     if (crop == QLatin1String("1")) {
         // user wants to center crop the slides
-        auto *filter = new Mlt::Filter(*pCore->getProjectProfile(), "crop");
+        auto *filter = new Mlt::Filter(pCore->getProjectProfile(), "crop");
         if ((filter != nullptr) && filter->is_valid()) {
             filter->set("center", 1);
             producer->attach(*filter);
@@ -221,7 +221,7 @@ void ClipLoadTask::generateThumbnail(std::shared_ptr<ProjectClip> binClip, std::
         frameNumber = binClip->getThumbFrame();
     }
     if (producer->get_int("video_index") > -1) {
-        QImage thumb = ThumbnailCache::get()->getThumbnail(binClip->hashForThumbs(), QString::number(m_owner.second), frameNumber);
+        QImage thumb = ThumbnailCache::get()->getThumbnail(binClip->hashForThumbs(), QString::number(m_owner.itemId), frameNumber);
         if (!thumb.isNull()) {
             // Thumbnail found in cache
             qDebug() << "=== FOUND THUMB IN CACHe";
@@ -233,18 +233,18 @@ void ClipLoadTask::generateThumbnail(std::shared_ptr<ProjectClip> binClip, std::
                 if (frameNumber > 0) {
                     thumbProd->seek(frameNumber);
                 }
-                QScopedPointer<Mlt::Frame> frame(thumbProd->get_frame());
+                std::unique_ptr<Mlt::Frame> frame(thumbProd->get_frame());
                 if ((frame != nullptr) && frame->is_valid()) {
                     frame->set("consumer.deinterlacer", "onefield");
                     frame->set("consumer.top_field_first", -1);
                     frame->set("consumer.rescale", "nearest");
-                    int imageHeight(pCore->thumbProfile()->height());
-                    int imageWidth(pCore->thumbProfile()->width());
+                    int imageHeight(pCore->thumbProfile().height());
+                    int imageWidth(pCore->thumbProfile().width());
                     int fullWidth(qRound(imageHeight * pCore->getCurrentDar()));
                     if (m_isCanceled.loadAcquire() || pCore->taskManager.isBlocked()) {
                         return;
                     }
-                    QImage result = KThumb::getFrame(frame.data(), imageWidth, imageHeight, fullWidth);
+                    QImage result = KThumb::getFrame(frame.get(), imageWidth, imageHeight, fullWidth);
                     if (result.isNull() && !m_isCanceled.loadAcquire()) {
                         qDebug() << "+++++\nINVALID RESULT IMAGE\n++++++++++++++";
                         result = QImage(fullWidth, imageHeight, QImage::Format_ARGB32_Premultiplied);
@@ -259,7 +259,7 @@ void ClipLoadTask::generateThumbnail(std::shared_ptr<ProjectClip> binClip, std::
                         qDebug() << "=== GOT THUMB FOR: " << m_in << "x" << m_out;
                         QMetaObject::invokeMethod(binClip.get(), "setThumbnail", Qt::QueuedConnection, Q_ARG(QImage, result), Q_ARG(int, m_in),
                                                   Q_ARG(int, m_out), Q_ARG(bool, false));
-                        ThumbnailCache::get()->storeThumbnail(QString::number(m_owner.second), frameNumber, result, false);
+                        ThumbnailCache::get()->storeThumbnail(QString::number(m_owner.itemId), frameNumber, result, false);
                     }
                 }
             }
@@ -269,7 +269,7 @@ void ClipLoadTask::generateThumbnail(std::shared_ptr<ProjectClip> binClip, std::
 
 void ClipLoadTask::run()
 {
-    AbstractTaskDone whenFinished(m_owner.second, this);
+    AbstractTaskDone whenFinished(m_owner.itemId, this);
     if (m_isCanceled.loadAcquire() == 1 || pCore->taskManager.isBlocked()) {
         abort();
         return;
@@ -277,7 +277,7 @@ void ClipLoadTask::run()
     QMutexLocker lock(&m_runMutex);
     // QThread::currentThread()->setPriority(QThread::HighestPriority);
     if (m_thumbOnly) {
-        auto binClip = pCore->projectItemModel()->getClipByBinID(QString::number(m_owner.second));
+        auto binClip = pCore->projectItemModel()->getClipByBinID(QString::number(m_owner.itemId));
         if (binClip && binClip->statusReady()) {
             if (m_isCanceled.loadAcquire() == 1 || pCore->taskManager.isBlocked()) {
                 abort();
@@ -291,7 +291,7 @@ void ClipLoadTask::run()
         return;
     }
     m_running = true;
-    Q_EMIT pCore->projectItemModel()->resetPlayOrLoopZone(QString::number(m_owner.second));
+    Q_EMIT pCore->projectItemModel()->resetPlayOrLoopZone(QString::number(m_owner.itemId));
     QString resource = Xml::getXmlProperty(m_xml, QStringLiteral("resource"));
     qDebug() << "============STARTING LOAD TASK FOR: " << resource << "\n\n:::::::::::::::::::";
     int duration = 0;
@@ -426,7 +426,7 @@ void ClipLoadTask::run()
     case ClipType::SlideShow:
     case ClipType::Image: {
         resource.prepend(QStringLiteral("qimage:"));
-        producer = std::make_shared<Mlt::Producer>(*pCore->getProjectProfile(), nullptr, resource.toUtf8().constData());
+        producer = std::make_shared<Mlt::Producer>(pCore->getProjectProfile(), nullptr, resource.toUtf8().constData());
         break;
     }
     default:
@@ -437,7 +437,7 @@ void ClipLoadTask::run()
             }
             producer = loadResource(resource, service);
         } else {
-            producer = std::make_shared<Mlt::Chain>(*pCore->getProjectProfile(), nullptr, resource.toUtf8().constData());
+            producer = std::make_shared<Mlt::Chain>(pCore->getProjectProfile(), nullptr, resource.toUtf8().constData());
         }
         break;
     }
@@ -452,7 +452,7 @@ void ClipLoadTask::run()
         if (producer) {
             producer.reset();
         }
-        auto binClip = pCore->projectItemModel()->getClipByBinID(QString::number(m_owner.second));
+        auto binClip = pCore->projectItemModel()->getClipByBinID(QString::number(m_owner.itemId));
         if (binClip && !binClip->isReloading) {
             QMetaObject::invokeMethod(pCore.get(), "displayBinMessage", Qt::QueuedConnection,
                                       Q_ARG(QString, m_errorMessage.isEmpty() ? i18n("Cannot open file %1", resource) : m_errorMessage),
@@ -481,7 +481,7 @@ void ClipLoadTask::run()
             producer.reset();
         }
         QMetaObject::invokeMethod(pCore->bin(), "requestTranscoding", Qt::QueuedConnection, Q_ARG(QString, resource),
-                                  Q_ARG(QString, QString::number(m_owner.second)), Q_ARG(int, cType), Q_ARG(bool, pCore->bin()->shouldCheckProfile),
+                                  Q_ARG(QString, QString::number(m_owner.itemId)), Q_ARG(int, cType), Q_ARG(bool, pCore->bin()->shouldCheckProfile),
                                   Q_ARG(QString, QString()),
                                   Q_ARG(QString, i18n("Duration of file <b>%1</b> cannot be determined.", QFileInfo(resource).fileName())));
         if (pCore->bin()->shouldCheckProfile) {
@@ -640,22 +640,8 @@ void ClipLoadTask::run()
                 }
             }
             QMetaObject::invokeMethod(pCore->bin(), "requestTranscoding", Qt::QueuedConnection, Q_ARG(QString, resource),
-                                      Q_ARG(QString, QString::number(m_owner.second)), Q_ARG(int, cType), Q_ARG(bool, checkProfile), Q_ARG(QString, QString()),
+                                      Q_ARG(QString, QString::number(m_owner.itemId)), Q_ARG(int, cType), Q_ARG(bool, checkProfile), Q_ARG(QString, QString()),
                                       Q_ARG(QString, i18n("File <b>%1</b> is not seekable.", QFileInfo(resource).fileName())));
-        }
-
-        // check if there are multiple streams
-        // List streams
-        int streams = producer->get_int("meta.media.nb_streams");
-        QList<int> audio_list, video_list;
-        for (int i = 0; i < streams && !m_isCanceled.loadAcquire(); ++i) {
-            QByteArray propertyName = QStringLiteral("meta.media.%1.stream.type").arg(i).toLocal8Bit();
-            QString stype = producer->get(propertyName.data());
-            if (stype == QLatin1String("audio")) {
-                audio_list.append(i);
-            } else if (stype == QLatin1String("video")) {
-                video_list.append(i);
-            }
         }
 
         // Check for variable frame rate
@@ -681,7 +667,7 @@ void ClipLoadTask::run()
                 }
             }
             QMetaObject::invokeMethod(pCore->bin(), "requestTranscoding", Qt::QueuedConnection, Q_ARG(QString, resource),
-                                      Q_ARG(QString, QString::number(m_owner.second)), Q_ARG(int, cType), Q_ARG(bool, checkProfile),
+                                      Q_ARG(QString, QString::number(m_owner.itemId)), Q_ARG(int, cType), Q_ARG(bool, checkProfile),
                                       Q_ARG(QString, adjustedFpsString),
                                       Q_ARG(QString, i18n("File <b>%1</b> has a variable frame rate.", QFileInfo(resource).fileName())));
         }
@@ -701,12 +687,13 @@ void ClipLoadTask::run()
         }
     }
     if (!m_isCanceled.loadAcquire()) {
-        auto binClip = pCore->projectItemModel()->getClipByBinID(QString::number(m_owner.second));
+        auto binClip = pCore->projectItemModel()->getClipByBinID(QString::number(m_owner.itemId));
         if (binClip) {
-            QMetaObject::invokeMethod(binClip.get(), "setProducer", Qt::QueuedConnection, Q_ARG(std::shared_ptr<Mlt::Producer>, producer), Q_ARG(bool, true));
+            QMetaObject::invokeMethod(binClip.get(), "setProducer", Qt::QueuedConnection, Q_ARG(std::shared_ptr<Mlt::Producer>, std::move(producer)),
+                                      Q_ARG(bool, true));
             if (checkProfile && !isVariableFrameRate && seekable) {
                 pCore->bin()->shouldCheckProfile = false;
-                QMetaObject::invokeMethod(pCore->bin(), "slotCheckProfile", Qt::QueuedConnection, Q_ARG(QString, QString::number(m_owner.second)));
+                QMetaObject::invokeMethod(pCore->bin(), "slotCheckProfile", Qt::QueuedConnection, Q_ARG(QString, QString::number(m_owner.itemId)));
             }
         }
         Q_EMIT taskDone();
@@ -726,7 +713,7 @@ void ClipLoadTask::abort()
     Fun undo = []() { return true; };
     Fun redo = []() { return true; };
     if (!m_softDelete && !m_thumbOnly) {
-        auto binClip = pCore->projectItemModel()->getClipByBinID(QString::number(m_owner.second));
+        auto binClip = pCore->projectItemModel()->getClipByBinID(QString::number(m_owner.itemId));
         if (binClip) {
             QMetaObject::invokeMethod(binClip.get(), "setInvalid", Qt::QueuedConnection);
             if (!m_isCanceled.loadAcquire() && !binClip->isReloading) {

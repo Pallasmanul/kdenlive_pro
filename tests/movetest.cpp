@@ -3,14 +3,13 @@
     SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
 */
 #include "catch.hpp"
+#include "test_utils.hpp"
+// test specific headers
 #include "doc/docundostack.hpp"
 #include "doc/kdenlivedoc.h"
-#include "test_utils.hpp"
 
-#include "definitions.h"
-#define private public
-#define protected public
 #include "core.h"
+#include "definitions.h"
 
 using namespace fakeit;
 
@@ -21,33 +20,24 @@ TEST_CASE("Cut undo/redo", "[MoveClips]")
     binModel->clean();
     std::shared_ptr<DocUndoStack> undoStack = std::make_shared<DocUndoStack>(nullptr);
 
-    // Here we do some trickery to enable testing.
-    // We mock the project class so that the undoStack function returns our undoStack
+    // Create document
     KdenliveDoc document(undoStack);
-    Mock<KdenliveDoc> docMock(document);
-    KdenliveDoc &mockedDoc = docMock.get();
-
-    // We mock the project class so that the undoStack function returns our undoStack, and our mocked document
-    Mock<ProjectManager> pmMock;
-    When(Method(pmMock, undoStack)).AlwaysReturn(undoStack);
-    When(Method(pmMock, cacheDir)).AlwaysReturn(QDir(QStandardPaths::writableLocation(QStandardPaths::CacheLocation)));
-    When(Method(pmMock, current)).AlwaysReturn(&mockedDoc);
-    ProjectManager &mocked = pmMock.get();
-    pCore->m_projectManager = &mocked;
-    mocked.m_project = &mockedDoc;
+    pCore->projectManager()->m_project = &document;
+    std::function<bool(void)> undo = []() { return true; };
+    std::function<bool(void)> redo = []() { return true; };
     QDateTime documentDate = QDateTime::currentDateTime();
-    mocked.updateTimeline(0, false, QString(), QString(), documentDate, 0);
-    auto timeline = mockedDoc.getTimeline(mockedDoc.uuid());
-    mocked.m_activeTimelineModel = timeline;
-    mocked.testSetActiveDocument(&mockedDoc, timeline);
+    pCore->projectManager()->updateTimeline(false, QString(), QString(), documentDate, 0);
+    auto timeline = document.getTimeline(document.uuid());
+    pCore->projectManager()->m_activeTimelineModel = timeline;
+    pCore->projectManager()->testSetActiveDocument(&document, timeline);
 
     // Create a request
     int tid3 = timeline->getTrackIndexFromPosition(1);
     int tid2 = timeline->getTrackIndexFromPosition(2);
 
     // Create clip with audio (40 frames long)
-    // QString binId = createAVProducer(*timeline->getProfile(), binModel);
-    QString binId = createProducerWithSound(*timeline->getProfile(), binModel, 100);
+    // QString binId = createAVProducer(*pCore->getProjectProfile(), binModel);
+    QString binId = createProducerWithSound(pCore->getProjectProfile(), binModel, 100);
 
     // Setup insert stream data
     QMap<int, QString> audioInfo;
@@ -99,6 +89,5 @@ TEST_CASE("Cut undo/redo", "[MoveClips]")
         REQUIRE(prod1.same_clip(prod3));
         REQUIRE(prod2.same_clip(prod4));
     }
-    binModel->clean();
-    pCore->m_projectManager = nullptr;
+    pCore->projectManager()->closeCurrentDocument(false, false);
 }

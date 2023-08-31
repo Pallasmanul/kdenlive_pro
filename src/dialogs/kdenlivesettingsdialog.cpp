@@ -325,7 +325,7 @@ void KdenliveSettingsDialog::initEnviromentPage()
     m_configEnv.setupUi(p2);
     m_configEnv.mltpathurl->setMode(KFile::Directory);
     m_configEnv.mltpathurl->lineEdit()->setObjectName(QStringLiteral("kcfg_mltpath"));
-    m_configEnv.rendererpathurl->lineEdit()->setObjectName(QStringLiteral("kcfg_rendererpath"));
+    m_configEnv.rendererpathurl->lineEdit()->setObjectName(QStringLiteral("kcfg_meltpath"));
     m_configEnv.ffmpegurl->lineEdit()->setObjectName(QStringLiteral("kcfg_ffmpegpath"));
     m_configEnv.ffplayurl->lineEdit()->setObjectName(QStringLiteral("kcfg_ffplaypath"));
     m_configEnv.ffprobeurl->lineEdit()->setObjectName(QStringLiteral("kcfg_ffprobepath"));
@@ -1002,7 +1002,8 @@ void KdenliveSettingsDialog::updateSettings()
     if (m_configEnv.ffmpegurl->text().isEmpty()) {
         QString infos;
         QString warnings;
-        Wizard::slotCheckPrograms(infos, warnings);
+        QString errors;
+        Wizard::slotCheckPrograms(infos, warnings, errors);
         m_configEnv.ffmpegurl->setText(KdenliveSettings::ffmpegpath());
         m_configEnv.ffplayurl->setText(KdenliveSettings::ffplaypath());
         m_configEnv.ffprobeurl->setText(KdenliveSettings::ffprobepath());
@@ -1309,9 +1310,6 @@ void KdenliveSettingsDialog::updateSettings()
     }
     if (m_configSpeech.combo_wr_device->currentData().toString() != KdenliveSettings::whisperDevice()) {
         KdenliveSettings::setWhisperDevice(m_configSpeech.combo_wr_device->currentData().toString());
-    }
-    if (m_configSpeech.wr_translate->isChecked() != KdenliveSettings::whisperTranslate()) {
-        KdenliveSettings::setWhisperTranslate(m_configSpeech.wr_translate->isChecked());
     }
 
     // Mimes
@@ -1757,7 +1755,6 @@ void KdenliveSettingsDialog::initSpeechPage()
         m_configSpeech.combo_wr_lang->setCurrentIndex(ix);
     }
     m_configSpeech.script_log->hide();
-    m_configSpeech.wr_translate->setChecked(KdenliveSettings::whisperTranslate());
     connect(m_sttWhisper, &SpeechToText::scriptStarted, [this]() { QMetaObject::invokeMethod(m_configSpeech.script_log, "clear"); });
     connect(m_sttWhisper, &SpeechToText::installFeedback, [this](const QString jobData) {
         QMetaObject::invokeMethod(m_configSpeech.script_log, "show", Qt::QueuedConnection);
@@ -1784,6 +1781,8 @@ void KdenliveSettingsDialog::initSpeechPage()
     connect(m_sttWhisper, &SpeechToText::dependenciesAvailable, this, [&]() { m_sttWhisper->runConcurrentScript(QStringLiteral("checkgpu.py"), {}); });
 
     // VOSK
+    m_configSpeech.vosk_folder->setPlaceholderText(
+        QStandardPaths::locate(QStandardPaths::AppDataLocation, QStringLiteral("speechmodels"), QStandardPaths::LocateDirectory));
     PythonDependencyMessage *msg = new PythonDependencyMessage(this, m_stt);
     m_configSpeech.message_layout->addWidget(msg);
 

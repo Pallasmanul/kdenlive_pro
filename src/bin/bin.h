@@ -26,8 +26,7 @@ SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
 #include <QWidget>
 #include <QActionGroup>
 
-#include "KFileWidget"
-#include "KRecentDirs"
+#include <KRecentDirs>
 
 class AbstractProjectItem;
 class BinItemDelegate;
@@ -52,6 +51,7 @@ class QToolButton;
 class QUndoCommand;
 class QVBoxLayout;
 class SmallJobLabel;
+class MediaBrowser;
 
 namespace Mlt {
 class Producer;
@@ -265,6 +265,8 @@ public:
     void reloadMonitorStreamIfActive(const QString &id);
     /** @brief Update timeline targets according to selected audio streams */
     void updateTargets(QString id = QStringLiteral("-1"));
+    /** @brief Update some timeline related stuff, like used clips bound, audio targets,... */
+    void sequenceActivated();
 
     void doMoveClip(const QString &id, const QString &newParentId);
     void doMoveFolder(const QString &id, const QString &newParentId);
@@ -322,7 +324,6 @@ public:
     void loadBinProperties(const QStringList &foldersToExpand, int zoomLevel = -1);
     /** @brief gets a QList of all clips used in timeline */
     QList<int> getUsedClipIds();
-    KFileWidget *initBrowserWidget();
     /** @brief Register a new timeline clip
      * @param uuid the uuid of the new playlist (equals the uuid of the timelinemodel)
      * @param id the bin id of the clip
@@ -333,7 +334,7 @@ public:
      * @param id the updated duration of the timeline clip
      * * @param current the uuid of the currently active timeline
      */
-    void updateSequenceClip(const QUuid &uuid, int duration, int pos, std::shared_ptr<Mlt::Producer> prod);
+    void updateSequenceClip(const QUuid &uuid, int duration, int pos);
     /** @brief Returns the bin id of the clip managing a timeline sequence changed
      * @param uuid the uuid of the timeline clip
      */
@@ -360,8 +361,6 @@ public:
     /** @brief Returns true if a clip with id cid is visible in this bin. */
     bool containsId(const QString &cid) const;
     void replaceSingleClip(const QString clipId, const QString &newUrl);
-    /** @brief Remove clip references for a timeline. */
-    void removeReferencedClips(const QUuid &uuid);
     /** @brief List all clips referenced in a timeline sequence. */
     QStringList sequenceReferencedClips(const QUuid &uuid) const;
     /** @brief Define a thumbnail for a sequence clip. */
@@ -373,7 +372,6 @@ public:
      * @param vTracks the video tracks count, use default if -1 */
     void buildSequenceClip(int aTracks = -1, int vTracks = -1);
     const QString buildSequenceClipWithUndo(Fun &undo, Fun &redo, int aTracks = -1, int vTracks = -1);
-    const QString lastBrowserUrl() const;
 
 private Q_SLOTS:
     void slotAddClip();
@@ -392,7 +390,6 @@ private Q_SLOTS:
     /** @brief Setup the bin view type (icon view, tree view, ...).
      * @param action The action whose data defines the view type or nullptr to keep default view */
     void slotInitView(QAction *action);
-
     void slotSetIconSize(int size);
     void selectProxyModel(const QModelIndex &id);
     void slotSaveHeaders();
@@ -436,8 +433,11 @@ private Q_SLOTS:
     void updateTimelineOccurrences();
     /** @brief Set (or unset) the default folder for newly created sequence clips. */
     void setDefaultSequenceFolder(bool enable);
+    /** @brief Fetch the filters from the UI and apply them to the proxy model */
+    void slotApplyFilters();
 
 public Q_SLOTS:
+
     void slotRemoveInvalidClip(const QString &id, bool replace, const QString &errorMessage);
     /** @brief Reload clip thumbnail - when frame for thumbnail changed */
     void slotRefreshClipThumbnail(const QString &id);
@@ -567,10 +567,10 @@ private:
     QActionGroup *m_sortGroup;
     SmallJobLabel *m_infoLabel;
     TagWidget *m_tagsWidget;
-    KFileWidget *m_browserWidget;
     QMenu *m_filterMenu;
-    QActionGroup m_filterGroup;
+    QActionGroup m_filterTagGroup;
     QActionGroup m_filterRateGroup;
+    QActionGroup m_filterUsageGroup;
     QActionGroup m_filterTypeGroup;
     QToolButton *m_filterButton;
     /** @brief The info widget for failed jobs. */

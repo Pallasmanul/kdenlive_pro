@@ -1310,7 +1310,7 @@ const QString RemapView::getKeyframesData(QMap<int, int> keyframes) const
             offset = 1;
         }
         Mlt::Properties props;
-        props.set("_profile", pCore->getProjectProfile()->get_profile(), 0);
+        props.set("_profile", pCore->getProjectProfile().get_profile(), 0);
         result << QString("%1=%2").arg(props.frames_to_time(i.key() + offset, mlt_time_clock)).arg(GenTime(i.value(), pCore->getCurrentFps()).seconds());
     }
     return result.join(QLatin1Char(';'));
@@ -1322,7 +1322,7 @@ void RemapView::reloadProducer()
         qDebug() << "==== this is not a playlist clip, aborting";
         return;
     }
-    Mlt::Consumer c(*pCore->getProjectProfile(), "xml", m_clip->clipUrl().toUtf8().constData());
+    Mlt::Consumer c(pCore->getProjectProfile(), "xml", m_clip->clipUrl().toUtf8().constData());
     QScopedPointer<Mlt::Service> serv(m_clip->originalProducer()->producer());
     if (serv == nullptr) {
         return;
@@ -1330,7 +1330,7 @@ void RemapView::reloadProducer()
     qDebug() << "==== GOR PLAYLIST SERVICE: " << serv->type() << " / " << serv->consumer()->type() << ", SAVING TO " << m_clip->clipUrl();
     Mlt::Multitrack s2(*serv.data());
     qDebug() << "==== MULTITRACK: " << s2.count();
-    Mlt::Tractor s(*pCore->getProjectProfile());
+    Mlt::Tractor s(pCore->getProjectProfile());
     s.set_track(*s2.track(0), 0);
     qDebug() << "==== GOT TRACKS: " << s.count();
     int ignore = s.get_int("ignore_points");
@@ -1723,7 +1723,7 @@ TimeRemap::TimeRemap(QWidget *parent)
         if (m_cid > -1) {
             std::shared_ptr<TimelineItemModel> model = pCore->window()->getCurrentTimeline()->model();
             model->requestClipTimeRemap(m_cid, false);
-            selectedClip(-1);
+            selectedClip(-1, QUuid());
         }
     });
     connect(button_add, &QToolButton::clicked, m_view, &RemapView::addKeyframe);
@@ -1752,7 +1752,8 @@ void TimeRemap::checkClipUpdate(const QModelIndex &topLeft, const QModelIndex &,
     }
     // Don't resize view if we are moving a keyframe
     if (!m_view->movingKeyframe()) {
-        int newDuration = pCore->getItemDuration({ObjectType::TimelineClip, m_cid});
+        ObjectId oid(ObjectType::TimelineClip, m_cid, m_uuid);
+        int newDuration = pCore->getItemDuration(oid);
         // Check if the keyframes were modified by an external resize operation
         std::shared_ptr<TimelineItemModel> model = pCore->window()->getCurrentTimeline()->model();
         std::shared_ptr<ClipModel> clip = model->getClipPtr(m_cid);
@@ -1764,8 +1765,8 @@ void TimeRemap::checkClipUpdate(const QModelIndex &topLeft, const QModelIndex &,
         // Reload keyframes
         m_lastLength = newDuration;
         m_view->m_remapLink->set("map", values.value(QLatin1String("map")).toUtf8().constData());
-        int min = pCore->getItemIn({ObjectType::TimelineClip, m_cid});
-        m_view->m_startPos = pCore->getItemPosition({ObjectType::TimelineClip, m_cid});
+        int min = pCore->getItemIn(oid);
+        m_view->m_startPos = pCore->getItemPosition(oid);
         m_in->setRange(0, m_view->m_maxLength - min);
         m_out->setRange(0, INT_MAX);
         m_view->loadKeyframes(values.value(QLatin1String("map")));
@@ -1773,7 +1774,7 @@ void TimeRemap::checkClipUpdate(const QModelIndex &topLeft, const QModelIndex &,
     }
 }
 
-void TimeRemap::selectedClip(int cid)
+void TimeRemap::selectedClip(int cid, const QUuid uuid)
 {
     if (cid == -1 && cid == m_cid) {
         warningMessage->hide();
@@ -1786,6 +1787,7 @@ void TimeRemap::selectedClip(int cid)
     std::shared_ptr<TimelineItemModel> model = pCore->window()->getCurrentTimeline()->model();
     disconnect(model.get(), &TimelineItemModel::dataChanged, this, &TimeRemap::checkClipUpdate);
     m_cid = cid;
+    m_uuid = uuid;
     if (cid == -1) {
         m_binId.clear();
         m_view->setDuration(nullptr, -1);
@@ -1807,8 +1809,9 @@ void TimeRemap::selectedClip(int cid)
     }
     m_view->m_remapLink.reset();
     m_splitId = model->m_groups->getSplitPartner(cid);
-    m_lastLength = pCore->getItemDuration({ObjectType::TimelineClip, cid});
-    m_view->m_startPos = pCore->getItemPosition({ObjectType::TimelineClip, cid});
+    ObjectId oid(ObjectType::TimelineClip, cid, m_uuid);
+    m_lastLength = pCore->getItemDuration(oid);
+    m_view->m_startPos = pCore->getItemPosition(oid);
     model->requestClipTimeRemap(cid);
     connect(model.get(), &TimelineItemModel::dataChanged, this, &TimeRemap::checkClipUpdate);
     m_view->m_maxLength = prod->get_length();
@@ -1867,8 +1870,8 @@ void TimeRemap::selectedClip(int cid)
     m_seekConnection1 = connect(m_view, &RemapView::seekToPos, this, [this](int topPos, int bottomPos) {
         if (topPos > -1) {
             if (pCore->getMonitor(Kdenlive::ClipMonitor)->activeClipId() != m_binId) {
-                int min = pCore->getItemIn({ObjectType::TimelineClip, m_cid});
-                int lastLength = pCore->getItemDuration({ObjectType::TimelineClip, m_cid});
+                int min = pCore->getItemIn(ObjectId(ObjectType::TimelineClip, m_cid, m_uuid));
+                int lastLength = pCore->getItemDuration(ObjectId(ObjectType::TimelineClip, m_cid, m_uuid));
                 int max = min + lastLength;
                 pCore->selectBinClip(m_binId, true, min, {min, max});
             }
@@ -1891,6 +1894,7 @@ void TimeRemap::setClip(std::shared_ptr<ProjectClip> clip, int in, int out)
     QObject::disconnect(m_seekConnection2);
     QObject::disconnect(m_seekConnection3);
     m_cid = -1;
+    m_uuid = QUuid();
     m_binId.clear();
     if (clip == nullptr || !clip->statusReady() || clip->clipType() != ClipType::Playlist) {
         m_view->setDuration(nullptr, -1);
@@ -2000,9 +2004,8 @@ void TimeRemap::updateKeyframesWithUndo(const QMap<int, int> &updatedKeyframes, 
     bool useBlend = frame_blending->isChecked();
     bool hadPitch = m_view->m_remapLink->get_int("pitch") == 1;
     bool hadBlend = m_view->m_remapLink->get("image_mode") != QLatin1String("nearest");
-    bool durationChanged = updatedKeyframes.isEmpty() ? false
-                                                      : updatedKeyframes.lastKey() - pCore->getItemIn({ObjectType::TimelineClip, m_cid}) + 1 !=
-                                                            pCore->getItemDuration({ObjectType::TimelineClip, m_cid});
+    ObjectId oid(ObjectType::TimelineClip, m_cid, m_uuid);
+    bool durationChanged = updatedKeyframes.isEmpty() ? false : updatedKeyframes.lastKey() - pCore->getItemIn(oid) + 1 != pCore->getItemDuration(oid);
     Fun undo = []() { return true; };
     Fun redo = []() { return true; };
     Fun local_undo = [this, link = m_view->m_remapLink, splitLink = m_splitRemap, previousKeyframes, cid = m_cid, oldIn = m_view->m_oldInFrame, hadPitch,

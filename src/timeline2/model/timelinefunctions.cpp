@@ -1395,7 +1395,7 @@ void TimelineFunctions::saveTimelineSelection(const std::shared_ptr<TimelineItem
     }
     qDebug() << "==========\nGOT SOUREC TRACKS: " << sourceTracks << "\n\nGGGGGGGGGGGGGGGGGGGGGGG";
     // Build target timeline
-    Mlt::Tractor newTractor(*pCore->getProjectProfile());
+    Mlt::Tractor newTractor(pCore->getProjectProfile());
     QScopedPointer<Mlt::Field> field(newTractor.field());
     int ix = 0;
     QString composite = TransitionsRepository::get()->getCompositingTransition();
@@ -1812,8 +1812,7 @@ bool TimelineFunctions::pasteClips(const std::shared_ptr<TimelineItemModel> &tim
             videoTracks << trackPos;
         }
         int atrackPos = prod.attribute(QStringLiteral("a_track")).toInt();
-        // if (atrackPos == 0 || videoTracks.contains(atrackPos)) {
-        if (videoTracks.contains(atrackPos)) {
+        if (atrackPos == 0 || videoTracks.contains(atrackPos)) {
             continue;
         }
         videoTracks << atrackPos;
@@ -1831,7 +1830,8 @@ bool TimelineFunctions::pasteClips(const std::shared_ptr<TimelineItemModel> &tim
     int requestedVideoTracks = videoTracks.isEmpty() ? 0 : videoTracks.last() - videoTracks.first() + 1;
     int requestedAudioTracks = audioTracks.isEmpty() ? 0 : audioTracks.last() - audioTracks.first() + 1;
     if (requestedVideoTracks > projectTracks.second.size() || requestedAudioTracks > projectTracks.first.size()) {
-        pCore->displayMessage(i18n("Not enough tracks to paste clipboard"), ErrorMessage, 500);
+        pCore->displayMessage(i18n("Not enough tracks to paste clipboard (requires %1 audio, %2 video tracks)", requestedAudioTracks, requestedVideoTracks),
+                              ErrorMessage, 500);
         semaphore.release(1);
         return false;
     }
@@ -2114,7 +2114,7 @@ bool TimelineFunctions::pasteClips(const std::shared_ptr<TimelineItemModel> &tim
             }
             waitingBinIds << clipId;
             clipsImported = true;
-            std::shared_ptr<Mlt::Producer> xmlProd(new Mlt::Producer(*pCore->getProjectProfile(), "xml-string", doc.toString().toUtf8().constData()));
+            std::shared_ptr<Mlt::Producer> xmlProd(new Mlt::Producer(pCore->getProjectProfile(), "xml-string", doc.toString().toUtf8().constData()));
             if (!xmlProd->is_valid()) {
                 qDebug() << ":::: CANNOT IMPORT SEQUENCE: " << clipId;
                 continue;
@@ -2336,7 +2336,11 @@ bool TimelineFunctions::pasteTimelineClips(const std::shared_ptr<TimelineItemMod
             mixData.firstClipInOut.second = mix.attribute(QLatin1String("mixEnd")).toInt() * ratio;
             mixData.secondClipInOut.first = mix.attribute(QLatin1String("mixStart")).toInt() * ratio;
             mixData.mixOffset = mix.attribute(QLatin1String("mixOffset")).toInt() * ratio;
-            timeline->getTrackById_const(mix.attribute(QLatin1String("tid")).toInt())->createMix(mixData, mixParams, true);
+            std::pair<int, int> tracks = {mix.attribute(QLatin1String("a_track")).toInt(), mix.attribute(QLatin1String("b_track")).toInt()};
+            if (tracks.first == tracks.second) {
+                tracks = {0, 1};
+            }
+            timeline->getTrackById_const(mix.attribute(QLatin1String("tid")).toInt())->createMix(mixData, mixParams, tracks, true);
         }
     }
     // Compositions
@@ -2397,6 +2401,11 @@ bool TimelineFunctions::pasteTimelineClips(const std::shared_ptr<TimelineItemMod
     }
     if (res && !subtitles.isEmpty()) {
         auto subModel = timeline->getSubtitleModel();
+        if (!subModel) {
+            // This timeline doesn't yet have subtitles, initiate
+            pCore->window()->slotShowSubtitles(true);
+            subModel = timeline->getSubtitleModel();
+        }
         for (int i = 0; res && i < subtitles.count(); i++) {
             QDomElement prod = subtitles.at(i).toElement();
             int in = prod.attribute(QStringLiteral("in")).toInt() * ratio - offset;

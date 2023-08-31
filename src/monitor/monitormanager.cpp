@@ -36,7 +36,7 @@ MonitorManager::MonitorManager(QObject *parent)
     connect(pCore.get(), &Core::monitorProfileUpdated, this, [&]() {
         QAction *prog = pCore->window()->actionCollection()->action(QStringLiteral("mlt_progressive"));
         if (prog) {
-            prog->setEnabled(!pCore->getProjectProfile()->progressive());
+            prog->setEnabled(!pCore->getProjectProfile().progressive());
             slotProgressivePlay(prog->isChecked());
         }
     });
@@ -108,10 +108,14 @@ void MonitorManager::focusProjectMonitor()
     }
 }
 
-void MonitorManager::refreshProjectRange(QPair<int, int> range)
+void MonitorManager::refreshProjectRange(QPair<int, int> range, bool forceRefresh)
 {
     if (m_projectMonitor->position() >= range.first && m_projectMonitor->position() <= range.second) {
-        m_projectMonitor->refreshMonitorIfActive();
+        if (forceRefresh) {
+            m_projectMonitor->refreshMonitor(false);
+        } else {
+            m_projectMonitor->refreshMonitorIfActive();
+        }
     }
 }
 
@@ -694,7 +698,7 @@ void MonitorManager::slotMuteCurrentMonitor(bool active)
 
 void MonitorManager::slotProgressivePlay(bool active)
 {
-    if (pCore->getProjectProfile()->progressive()) {
+    if (pCore->getProjectProfile().progressive()) {
         // nothing to do
         return;
     }
@@ -759,7 +763,7 @@ void MonitorManager::slotSetOutPoint()
     } else if (m_activeMonitor == m_projectMonitor) {
         QPoint sourceZone = m_projectMonitor->getZoneInfo();
         QPoint destZone = sourceZone;
-        destZone.setY(m_projectMonitor->position());
+        destZone.setY(m_projectMonitor->position() + 1);
         if (destZone.y() < destZone.x()) {
             destZone.setX(qMax(0, destZone.y() - (sourceZone.y() - sourceZone.x())));
         }

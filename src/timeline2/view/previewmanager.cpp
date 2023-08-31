@@ -7,6 +7,7 @@
 #include "previewmanager.h"
 #include "bin/projectitemmodel.h"
 #include "core.h"
+#include "dialogs/wizard.h"
 #include "doc/docundostack.hpp"
 #include "doc/kdenlivedoc.h"
 #include "kdenlivesettings.h"
@@ -15,6 +16,7 @@
 #include "profiles/profilemodel.hpp"
 #include "timeline2/view/timelinecontroller.h"
 #include "timeline2/view/timelinewidget.h"
+#include "xml/xml.hpp"
 
 #include <KLocalizedString>
 #include <KMessageBox>
@@ -39,19 +41,15 @@ PreviewManager::PreviewManager(Mlt::Tractor *tractor, QUuid uuid, QObject *paren
     m_previewGatherTimer.setInterval(200);
     QObject::connect(&m_previewProcess, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished), this, &PreviewManager::processEnded);
 
-    // Find path for Kdenlive renderer
-#ifdef Q_OS_WIN
-    m_renderer = QCoreApplication::applicationDirPath() + QStringLiteral("/kdenlive_render.exe");
-#else
-    m_renderer = QCoreApplication::applicationDirPath() + QStringLiteral("/kdenlive_render");
-#endif
-    if (!QFile::exists(m_renderer)) {
-        m_renderer = QStandardPaths::findExecutable(QStringLiteral("kdenlive_render"));
-        if (m_renderer.isEmpty()) {
-            KMessageBox::error(pCore->window(),
+    if (KdenliveSettings::kdenliverendererpath().isEmpty() || !QFileInfo::exists(KdenliveSettings::kdenliverendererpath())) {
+        KdenliveSettings::setKdenliverendererpath(QString());
+        Wizard::fixKdenliveRenderPath();
+        if (KdenliveSettings::kdenliverendererpath().isEmpty()) {
+            KMessageBox::error(QApplication::activeWindow(),
                                i18n("Could not find the kdenlive_render application, something is wrong with your installation. Rendering will not work"));
         }
     }
+
     connect(this, &PreviewManager::abortPreview, &m_previewProcess, &QProcess::kill, Qt::DirectConnection);
     connect(&m_previewProcess, &QProcess::readyReadStandardError, this, &PreviewManager::receivedStderr);
 }
@@ -135,7 +133,7 @@ bool PreviewManager::buildPreviewTrack()
     }
     // Create overlay track
     qDebug() << "/// BUILDING PREVIEW TRACK\n----------------------\n----------------__";
-    m_previewTrack = new Mlt::Playlist(*pCore->getProjectProfile());
+    m_previewTrack = new Mlt::Playlist(pCore->getProjectProfile());
     m_previewTrack->set("kdenlive:playlistid", "timeline_preview");
     m_tractor->lock();
     reconnectTrack();
@@ -160,6 +158,12 @@ void PreviewManager::loadChunks(QVariantList previewChunks, QVariantList dirtyCh
     int max = playlist.count();
     std::shared_ptr<Mlt::Producer> clip;
     m_tractor->lock();
+    if (max == 0) {
+        // Empty timeline preview, mark all as dirty
+        for (auto &prev : previewChunks) {
+            dirtyChunks << prev;
+        }
+    }
     for (int i = 0; i < max; i++) {
         if (playlist.is_blank(i)) {
             continue;
@@ -550,16 +554,8 @@ void PreviewManager::startPreviewRender()
                 pCore->projectItemModel()->sceneList(m_cacheDir.absolutePath(), QString(), QString(), pCore->currentDoc()->getTimeline(m_uuid)->tractor(), -1);
             QDomDocument doc;
             doc.setContent(playlist);
-            pCore->currentDoc()->useOriginals(doc);
-            const QString final = doc.toString().toUtf8();
-            QSaveFile file(sceneList);
-            if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-                qDebug() << "//////  ERROR writing to file: " << sceneList;
-                return;
-            }
-            file.write(final.toUtf8());
-            if (!file.commit()) {
-                qDebug() << "Cannot write to file " << sceneList;
+            KdenliveDoc::useOriginals(doc);
+            if (!Xml::docContentToFile(doc, sceneList)) {
                 return;
             }
         } else {
@@ -612,9 +608,9 @@ void PreviewManager::doPreviewRender(const QString &scene)
                      m_extension,
                      m_consumerParams.join(QLatin1Char(' '))};
     pCore->currentDoc()->previewProgress(0);
-    m_previewProcess.start(m_renderer, args);
+    m_previewProcess.start(KdenliveSettings::kdenliverendererpath(), args);
     if (m_previewProcess.waitForStarted()) {
-        qDebug() << " -  - -STARTING PREVIEW JOBS . . . STARTED";
+        qDebug() << " -  - -STARTING PREVIEW JOBS . . . STARTED: " << args;
     }
 }
 
@@ -622,7 +618,7 @@ void PreviewManager::processEnded(int exitCode, QProcess::ExitStatus status)
 {
     const QString sceneList = m_cacheDir.absoluteFilePath(QStringLiteral("preview.mlt"));
     QFile::remove(sceneList);
-    if (status == QProcess::QProcess::CrashExit || exitCode != 0) {
+    if (pCore->window() && (status == QProcess::QProcess::CrashExit || exitCode != 0)) {
         Q_EMIT previewRender(0, m_errorLog, -1);
         if (workingPreview >= 0) {
             const QString fileName = QStringLiteral("%1.%2").arg(workingPreview).arg(m_extension);
@@ -749,7 +745,7 @@ void PreviewManager::reloadChunks(const QVariantList &chunks)
         if (m_previewTrack->is_blank_at(ix.toInt())) {
             QString fileName = m_cacheDir.absoluteFilePath(QStringLiteral("%1.%2").arg(ix.toInt()).arg(m_extension));
             fileName.prepend(QStringLiteral("avformat:"));
-            Mlt::Producer prod(*pCore->getProjectProfile(), fileName.toUtf8().constData());
+            Mlt::Producer prod(pCore->getProjectProfile(), fileName.toUtf8().constData());
             if (prod.is_valid()) {
                 // m_ruler->updatePreview(ix, true);
                 prod.set("mlt_service", "avformat-novalidate");
@@ -785,7 +781,7 @@ void PreviewManager::gotPreviewRender(int frame, const QString &file, int progre
         return;
     }
     if (m_previewTrack->is_blank_at(frame)) {
-        Mlt::Producer prod(*pCore->getProjectProfile(), QString("avformat:%1").arg(file).toUtf8().constData());
+        Mlt::Producer prod(pCore->getProjectProfile(), QString("avformat:%1").arg(file).toUtf8().constData());
         if (prod.is_valid() && prod.get_length() == KdenliveSettings::timelinechunks()) {
             m_dirtyMutex.lock();
             m_dirtyChunks.removeAll(QVariant(frame));
@@ -854,11 +850,11 @@ QPair<QStringList, QStringList> PreviewManager::previewChunks()
 const QStringList PreviewManager::getCompressedList(const QVariantList items) const
 {
     QStringList resultString;
-    int lastFrame = 0;
+    int lastFrame = -1;
     QString currentString;
     for (const QVariant &frame : items) {
         int current = frame.toInt();
-        if (current - 25 == lastFrame) {
+        if (current - KdenliveSettings::timelinechunks() == lastFrame) {
             lastFrame = current;
             if (frame == items.last()) {
                 currentString.append(QString("-%1").arg(lastFrame));

@@ -170,8 +170,8 @@ void MltConnection::locateMeltAndProfilesPath(const QString &mltPath)
 #if (!(defined(Q_OS_WIN) || defined(Q_OS_MAC)))
     // stored setting should not be considered on windows as MLT is distributed with each new Kdenlive version
     if (meltPath.isEmpty() || !QFile::exists(meltPath)) {
-        meltPath = KdenliveSettings::rendererpath();
-        qWarning() << "meltPath from KdenliveSetting::rendererPath: " << meltPath;
+        meltPath = KdenliveSettings::meltpath();
+        qWarning() << "meltPath from KdenliveSetting::meltPath: " << meltPath;
     }
 #endif
     if (meltPath.isEmpty() || !QFile::exists(meltPath)) {
@@ -192,7 +192,7 @@ void MltConnection::locateMeltAndProfilesPath(const QString &mltPath)
         meltPath = QStandardPaths::findExecutable("mlt-melt");
         qWarning() << "meltPath from findExe \"mlt-melt\" : " << meltPath;
     }
-    KdenliveSettings::setRendererpath(meltPath);
+    KdenliveSettings::setMeltpath(meltPath);
 
     if (meltPath.isEmpty() && !qEnvironmentVariableIsSet("MLT_TESTS")) {
         // Cannot find the MLT melt renderer, ask for location
@@ -205,7 +205,7 @@ void MltConnection::locateMeltAndProfilesPath(const QString &mltPath)
             if (meltPath.isEmpty()) {
                 ::exit(0);
             } else {
-                KdenliveSettings::setRendererpath(meltPath);
+                KdenliveSettings::setMeltpath(meltPath);
             }
         }
     }
@@ -268,6 +268,9 @@ void MltConnection::refreshLumas()
     customLumas.removeDuplicates();
     QStringList hdLumas;
     QStringList sdLumas;
+    QStringList ntscLumas;
+    QStringList verticalLumas;
+    QStringList squareLumas;
     QStringList allImagefiles;
     for (const QString &folder : qAsConst(customLumas)) {
         QDir topDir(folder);
@@ -289,19 +292,34 @@ void MltConnection::refreshLumas()
             }
             if (f == QLatin1String("HD")) {
                 hdLumas << imagefiles;
-            } else {
+            } else if (f == QLatin1String("PAL")) {
                 sdLumas << imagefiles;
+            } else if (f == QLatin1String("NTSC")) {
+                ntscLumas << imagefiles;
+            } else if (f == QLatin1String("VERTICAL")) {
+                verticalLumas << imagefiles;
+            } else if (f == QLatin1String("SQUARE")) {
+                squareLumas << imagefiles;
             }
             allImagefiles << imagefiles;
         }
     }
     // Insert MLT builtin lumas (created on the fly)
+    QStringList autoLumas;
     for (int i = 1; i < 23; i++) {
         QString imageName = QStringLiteral("luma%1.pgm").arg(i, 2, 10, QLatin1Char('0'));
-        hdLumas << imageName;
+        autoLumas << imageName;
     }
+    hdLumas << autoLumas;
+    sdLumas << autoLumas;
+    ntscLumas << autoLumas;
+    verticalLumas << autoLumas;
+    squareLumas << autoLumas;
     MainWindow::m_lumaFiles.insert(QStringLiteral("16_9"), hdLumas);
+    MainWindow::m_lumaFiles.insert(QStringLiteral("9_16"), verticalLumas);
+    MainWindow::m_lumaFiles.insert(QStringLiteral("square"), squareLumas);
     MainWindow::m_lumaFiles.insert(QStringLiteral("PAL"), sdLumas);
+    MainWindow::m_lumaFiles.insert(QStringLiteral("NTSC"), ntscLumas);
     allImagefiles.removeDuplicates();
 #if QT_VERSION < QT_VERSION_CHECK(6, 0, 0)
     QtConcurrent::run(pCore.get(), &Core::buildLumaThumbs, allImagefiles);

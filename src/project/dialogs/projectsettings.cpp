@@ -12,6 +12,7 @@ SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
 #include "bin/projectitemmodel.h"
 #include "core.h"
 #include "dialogs/profilesdialog.h"
+#include "dialogs/wizard.h"
 #include "doc/kdenlivedoc.h"
 #include "kdenlivesettings.h"
 #include "mainwindow.h"
@@ -419,6 +420,9 @@ void ProjectSettings::slotUpdateFiles(bool cacheOnly)
     QTreeWidgetItem *others = new QTreeWidgetItem(files_list, QStringList() << i18n("Other clips"));
     others->setIcon(0, QIcon::fromTheme(QStringLiteral("unknown")));
     others->setExpanded(true);
+    QTreeWidgetItem *subtitles = new QTreeWidgetItem(files_list, QStringList() << i18n("Subtitles"));
+    subtitles->setIcon(0, QIcon::fromTheme(QStringLiteral("text-plain")));
+    subtitles->setExpanded(true);
     int count = 0;
     QStringList allFonts;
     for (const QString &file : qAsConst(m_lumas)) {
@@ -471,6 +475,11 @@ void ProjectSettings::slotUpdateFiles(bool cacheOnly)
             new QTreeWidgetItem(videos, QStringList() << clip->clipUrl());
             break;
         }
+    }
+    // Subtitles
+    QStringList subtitleFiles = pCore->currentDoc()->getAllSubtitlesPath(true);
+    for (auto &path : subtitleFiles) {
+        new QTreeWidgetItem(subtitles, QStringList() << path);
     }
 
     uint used = 0;
@@ -559,7 +568,7 @@ QString ProjectSettings::selectedProfile() const
     return m_pw->selectedProfile();
 }
 
-QPair<int, int> ProjectSettings::tracks() const
+std::pair<int, int> ProjectSettings::tracks() const
 {
     return {video_tracks->value(), audio_tracks->value()};
 }
@@ -703,6 +712,8 @@ QStringList ProjectSettings::extractPlaylistUrls(const QString &path)
             }
         }
     }
+
+    // TODO merge with similar logic in DocumentChecker
 
     // luma files for transitions
     files = doc.elementsByTagName(QStringLiteral("transition"));
@@ -872,11 +883,12 @@ void ProjectSettings::loadProxyProfiles()
     QMapIterator<QString, QString> k(values);
     int ix = -1;
     proxy_profile->clear();
-    if (KdenliveSettings::vaapiEnabled() || KdenliveSettings::nvencEnabled()) {
-        proxy_profile->addItem(QIcon::fromTheme(QStringLiteral("speedometer")), i18n("Automatic"));
+    if (!KdenliveSettings::supportedHWCodecs().isEmpty()) {
+        proxy_profile->addItem(QIcon::fromTheme(QStringLiteral("speedometer")), i18n("Automatic (%1)", Wizard::getHWCodecFriendlyName()));
     } else {
         proxy_profile->addItem(i18n("Automatic"));
     }
+    const QStringList allHWCodecs = Wizard::codecs();
     while (k.hasNext()) {
         k.next();
         if (!k.key().isEmpty()) {
@@ -886,17 +898,21 @@ void ProjectSettings::loadProxyProfiles()
                 // this is the current profile
                 ix = proxy_profile->count();
             }
-            if (params.contains(QLatin1String("vaapi"))) {
-                proxy_profile->addItem(KdenliveSettings::vaapiEnabled() ? QIcon::fromTheme(QStringLiteral("speedometer"))
-                                                                        : QIcon::fromTheme(QStringLiteral("dialog-cancel")),
-                                       k.key(), k.value());
-            } else if (params.contains(QLatin1String("nvenc"))) {
-                proxy_profile->addItem(KdenliveSettings::nvencEnabled() ? QIcon::fromTheme(QStringLiteral("speedometer"))
-                                                                        : QIcon::fromTheme(QStringLiteral("dialog-cancel")),
-                                       k.key(), k.value());
-            } else {
-                proxy_profile->addItem(k.key(), k.value());
+            QString itemCodec;
+            QStringList values = params.split(QLatin1Char('-'));
+            for (auto &v : values) {
+                if (v.startsWith(QLatin1String("vcodec ")) || v.startsWith(QLatin1String("codec:v ")) || v.startsWith(QLatin1String("c:v "))) {
+                    itemCodec = v.section(QLatin1Char(' '), 1);
+                    break;
+                }
             }
+            if (!itemCodec.isEmpty() && allHWCodecs.contains(itemCodec)) {
+                if (KdenliveSettings::supportedHWCodecs().contains(itemCodec)) {
+                    proxy_profile->addItem(QIcon::fromTheme(QStringLiteral("speedometer")), k.key(), k.value());
+                }
+                continue;
+            }
+            proxy_profile->addItem(k.key(), k.value());
         }
     }
     if (ix == -1) {
