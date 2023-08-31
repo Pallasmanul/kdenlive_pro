@@ -42,6 +42,7 @@ SPDX-License-Identifier: GPL-3.0-only OR LicenseRef-KDE-Accepted-GPL
 #include "dialogs/textbasededit.h"
 #include "dialogs/timeremap.h"
 #include "lib/localeHandling.h"
+#include "manim/manimwidget.hpp"
 #include "mltconnection.h"
 #include "mltcontroller/clipcontroller.h"
 #include "monitor/monitor.h"
@@ -368,6 +369,10 @@ void MainWindow::init(const QString &mltPath)
     connect(onlineResources, &ResourceWidget::addClip, this, &MainWindow::slotAddProjectClip);
     connect(onlineResources, &ResourceWidget::addLicenseInfo, this, &MainWindow::slotAddTextNote);
 
+    // Manim widget
+    auto *manim = new ManimWidget(this);
+    m_manimDock = addDock(i18n("Manim"), QStringLiteral("Manim"), manim);
+
     // Close library and audiospectrum and others on first run
     screenGrabDock->close();
     libraryDock->close();
@@ -378,6 +383,7 @@ void MainWindow::init(const QString &mltPath)
     clipDockWidget->close();
     guidesDock->close();
     m_onlineResourcesDock->close();
+    m_manimDock->close();
 
     m_effectStackDock = addDock(i18n("Effect/Composition Stack"), QStringLiteral("effect_stack"), m_assetPanel);
     connect(m_assetPanel, &AssetPanel::doSplitEffect, m_projectMonitor, &Monitor::slotSwitchCompare);

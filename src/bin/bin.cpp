@@ -3445,6 +3445,9 @@ void Bin::setupMenu()
     addClipMenu->addAction(downloadResourceAction);
     connect(downloadResourceAction, &QAction::triggered, pCore->window(), &MainWindow::slotDownloadResources);
 
+    QAction *createManimAnimation = addAction(QStringLiteral("manim_animation"), i18n("Manim Animation"), QIcon::fromTheme(QStringLiteral("edit-download")));
+    addClipMenu->addAction(createManimAnimation);
+
     m_locateAction = addAction(QStringLiteral("locate_clip"), i18n("Locate Clip…"), QIcon::fromTheme(QStringLiteral("find-location")));
     m_locateAction->setData("locate_clip");
     m_locateAction->setEnabled(false);
